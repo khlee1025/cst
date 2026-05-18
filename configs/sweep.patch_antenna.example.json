@@ -1,0 +1,42 @@
+{
+  "project": {
+    "template_cst": "C:/path/to/antenna_template.cst",
+    "runs_dir": "runs",
+    "copy_template_per_run": true
+  },
+  "cst": {
+    "mode": "local_gui",
+    "connect_address": null,
+    "save_after_parameter_update": true,
+    "run_solver": true,
+    "result_exports": [
+      {
+        "name": "s11",
+        "type": "todo",
+        "note": "Add CST result-tree export path after confirming your model result names."
+      }
+    ]
+  },
+  "sweep": {
+    "max_runs": 12,
+    "parameters": [
+      {
+        "name": "patch_L",
+        "unit": "mm",
+        "start": 28.0,
+        "stop": 32.0,
+        "step": 1.0
+      },
+      {
+        "name": "feed_x",
+        "unit": "mm",
+        "values": [4.0, 5.0, 6.0]
+      }
+    ]
+  },
+  "scoring": {
+    "target_frequency_ghz": 2.45,
+    "s11_goal_db": -10.0,
+    "primary_metric": "min_s11_near_target"
+  }
+}
