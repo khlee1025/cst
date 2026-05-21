@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from .cst_adapter import CstAdapter
+from .results import analyze_run_dir
 
 
 @dataclass(frozen=True)
@@ -35,6 +36,8 @@ def run_sweep(config: dict[str, Any], config_path: Path, dry_run: bool) -> None:
 
     summary_path = runs_dir / "sweep_results.csv"
     adapter = None if dry_run else CstAdapter(config["cst"])
+    scoring_config = config.get("scoring", {})
+    result_config = config.get("results", {})
 
     rows: list[dict[str, Any]] = []
     for point in points:
@@ -57,6 +60,14 @@ def run_sweep(config: dict[str, Any], config_path: Path, dry_run: bool) -> None:
 
         row = {"run": point.index, "status": status, "error": error, "cst_path": str(cst_path)}
         row.update(point.parameters)
+        row.update(
+            analyze_run_dir(
+                run_dir=run_dir,
+                target_frequency_ghz=scoring_config.get("target_frequency_ghz"),
+                s11_goal_db=scoring_config.get("s11_goal_db", -10.0),
+                patterns=result_config.get("s11_file_patterns") or None,
+            )
+        )
         rows.append(row)
         write_summary(summary_path, rows)
 
@@ -144,4 +155,3 @@ def write_summary(path: Path, rows: list[dict[str, Any]]) -> None:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
         writer.writerows(rows)
-

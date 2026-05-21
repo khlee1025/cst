@@ -44,6 +44,48 @@ GUI로 직접 파라미터를 넣으려면:
 python .\gui_sweep.py
 ```
 
+## 결과 자동 분석
+
+각 run 폴더에 CST에서 export한 S11 파일이 있으면 자동으로 분석합니다.
+
+기본으로 찾는 파일 이름:
+
+```text
+s11.csv
+result_s11.csv
+s11.txt
+result_s11.txt
+*s11*.csv
+*s11*.txt
+```
+
+파일은 보통 2열이면 됩니다.
+
+```csv
+frequency_ghz,s11_db
+2.30,-4
+2.40,-12
+2.45,-18
+2.50,-11
+2.60,-5
+```
+
+분석 결과:
+
+- 목표 주파수의 S11
+- S11 최소값
+- S11 최소 주파수
+- -10 dB bandwidth
+- 목표 통과 여부
+- best run ranking
+
+GUI에서는 `Analyze Results` 버튼을 누르면 `runs/analysis_results.csv`가 생성됩니다.
+명령줄에서는 다음처럼 실행합니다.
+
+```powershell
+python .\analyze_results.py --config .\configs\sweep.patch_antenna.example.json
+```
+
 실제 CST 실행은 `dry_run`을 끄고, `template_cst`에 실제 CST 프로젝트 경로를 넣은 뒤 실행합니다.
 
 ```powershell

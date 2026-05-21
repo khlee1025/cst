@@ -34,6 +34,18 @@
       }
     ]
   },
+  "results": {
+    "s11_file_patterns": [
+      "s11.csv",
+      "result_s11.csv",
+      "s11.txt",
+      "result_s11.txt",
+      "*s11*.csv",
+      "*S11*.csv",
+      "*s11*.txt",
+      "*S11*.txt"
+    ]
+  },
   "scoring": {
     "target_frequency_ghz": 2.45,
     "s11_goal_db": -10.0,

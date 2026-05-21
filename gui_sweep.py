@@ -9,6 +9,7 @@ from tkinter import BooleanVar, StringVar, Tk, filedialog, messagebox
 from tkinter import ttk
 from typing import Any
 
+from src.results import analyze_runs, write_analysis_csv
 from src.sweep import load_config, run_sweep
 
 
@@ -164,6 +165,9 @@ class SweepGui(Tk):
 
         ttk.Button(frame, text="Save Config", command=self.save_config).grid(row=0, column=6, sticky="ew", padx=4)
         ttk.Button(frame, text="Run Sweep", command=self.start_sweep).grid(row=0, column=7, sticky="ew", padx=4)
+        ttk.Button(frame, text="Analyze Results", command=self.start_analysis).grid(
+            row=0, column=8, sticky="ew", padx=4
+        )
 
     def _build_log_section(self, parent: ttk.Frame) -> None:
         frame = ttk.LabelFrame(parent, text="Log", padding=10)
@@ -221,6 +225,51 @@ class SweepGui(Tk):
             config = load_config(config_path)
             run_sweep(config=config, config_path=config_path, dry_run=dry_run)
             self.log_queue.put("Sweep finished.")
+        except Exception:
+            self.log_queue.put(traceback.format_exc())
+
+    def start_analysis(self) -> None:
+        if self.worker and self.worker.is_alive():
+            messagebox.showinfo("Running", "A sweep or analysis is already running.")
+            return
+
+        self.save_config()
+        config_path = Path(self.config_path.get())
+        self.worker = threading.Thread(
+            target=self._analyze_worker,
+            args=(config_path,),
+            daemon=True,
+        )
+        self.worker.start()
+
+    def _analyze_worker(self, config_path: Path) -> None:
+        try:
+            self.log_queue.put(f"Analyzing results: {config_path}")
+            config = load_config(config_path)
+            scoring = config.get("scoring", {})
+            runs_dir = Path(config.get("project", {}).get("runs_dir", "runs"))
+            patterns = config.get("results", {}).get("s11_file_patterns")
+            rows = analyze_runs(
+                runs_dir=runs_dir,
+                target_frequency_ghz=scoring.get("target_frequency_ghz"),
+                s11_goal_db=scoring.get("s11_goal_db", -10.0),
+                patterns=patterns if patterns else None,
+            )
+            output_path = runs_dir / "analysis_results.csv"
+            write_analysis_csv(output_path, rows)
+            self.log_queue.put(f"Analyzed {len(rows)} run folders. Wrote {output_path}")
+            analyzed_rows = [row for row in rows if row.get("result_status") == "analyzed"]
+            if analyzed_rows:
+                best = analyzed_rows[0]
+                self.log_queue.put(
+                    "Best run: "
+                    f"{best.get('run')} | "
+                    f"S11@target={best.get('s11_at_target_db')} dB | "
+                    f"min={best.get('s11_min_db')} dB | "
+                    f"BW={best.get('bandwidth_10db_ghz')} GHz"
+                )
+            elif rows:
+                self.log_queue.put("No S11 files found yet. Export S11 into each run folder, then analyze again.")
         except Exception:
             self.log_queue.put(traceback.format_exc())
 
@@ -295,6 +344,18 @@ class SweepGui(Tk):
             "sweep": {
                 "max_runs": self._optional_int(self.max_runs.get()),
                 "parameters": self._read_parameter_specs(),
+            },
+            "results": {
+                "s11_file_patterns": [
+                    "s11.csv",
+                    "result_s11.csv",
+                    "s11.txt",
+                    "result_s11.txt",
+                    "*s11*.csv",
+                    "*S11*.csv",
+                    "*s11*.txt",
+                    "*S11*.txt",
+                ]
             },
             "scoring": {
                 "target_frequency_ghz": self._optional_float(self.target_frequency.get()),
@@ -391,4 +452,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
