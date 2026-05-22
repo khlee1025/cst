@@ -8,11 +8,11 @@ from src.sweep import load_config
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Analyze CST sweep S11 result files.")
+    parser = argparse.ArgumentParser(description="Analyze CST sweep result files.")
     parser.add_argument(
         "--config",
         type=Path,
-        default=Path("configs/sweep.patch_antenna.example.json"),
+        default=Path("configs/sweep.shield_mesh_3x3.example.json"),
         help="Path to sweep config JSON.",
     )
     parser.add_argument(
@@ -30,12 +30,14 @@ def main() -> int:
     scoring = config.get("scoring", {})
     runs_dir = args.runs_dir or Path(config.get("project", {}).get("runs_dir", "runs"))
     patterns = config.get("results", {}).get("s11_file_patterns")
+    s21_patterns = config.get("results", {}).get("s21_file_patterns")
 
     rows = analyze_runs(
         runs_dir=runs_dir,
         target_frequency_ghz=scoring.get("target_frequency_ghz"),
         s11_goal_db=scoring.get("s11_goal_db", -10.0),
         patterns=patterns if patterns else None,
+        s21_patterns=s21_patterns if s21_patterns else None,
     )
     output_path = runs_dir / "analysis_results.csv"
     write_analysis_csv(output_path, rows)
@@ -47,12 +49,14 @@ def main() -> int:
         print(
             "Best run: "
             f"{best.get('run')} "
+            f"S21@target={best.get('s21_at_target_db')} dB "
+            f"SE@target={best.get('shielding_effectiveness_at_target_db')} dB "
             f"S11@target={best.get('s11_at_target_db')} dB "
             f"min={best.get('s11_min_db')} dB "
             f"bw={best.get('bandwidth_10db_ghz')} GHz"
         )
     elif rows:
-        print("No S11 files found yet. Export S11 into each run folder, then analyze again.")
+        print("No S-parameter files found yet. Export S21 or S11 into each run folder, then analyze again.")
     return 0
 
 

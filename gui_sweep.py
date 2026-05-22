@@ -13,26 +13,26 @@ from src.results import analyze_runs, write_analysis_csv
 from src.sweep import load_config, run_sweep
 
 
-DEFAULT_CONFIG = Path("configs/sweep.patch_antenna.example.json")
+DEFAULT_CONFIG = Path("configs/sweep.shield_mesh_3x3.example.json")
 
 
 class SweepGui(Tk):
     def __init__(self) -> None:
         super().__init__()
-        self.title("CST RF Parameter Sweep")
+        self.title("CST 3x3 Shield Mesh Sweep")
         self.geometry("980x720")
         self.minsize(900, 640)
 
         self.config_path = StringVar(value=str(DEFAULT_CONFIG))
         self.template_cst = StringVar()
-        self.runs_dir = StringVar(value="runs")
+        self.runs_dir = StringVar(value="runs_shield_mesh_3x3")
         self.mode = StringVar(value="local_gui")
         self.connect_address = StringVar()
-        self.max_runs = StringVar(value="12")
+        self.max_runs = StringVar(value="25")
         self.dry_run = BooleanVar(value=True)
         self.save_after_update = BooleanVar(value=True)
         self.run_solver_enabled = BooleanVar(value=True)
-        self.target_frequency = StringVar(value="2.45")
+        self.target_frequency = StringVar(value="10.0")
         self.s11_goal = StringVar(value="-10.0")
 
         self.param_name = StringVar()
@@ -160,7 +160,7 @@ class SweepGui(Tk):
         ttk.Entry(frame, textvariable=self.max_runs, width=10).grid(row=0, column=1, sticky="w", padx=8)
         ttk.Label(frame, text="Target GHz").grid(row=0, column=2, sticky="w")
         ttk.Entry(frame, textvariable=self.target_frequency, width=10).grid(row=0, column=3, sticky="w", padx=8)
-        ttk.Label(frame, text="S11 goal dB").grid(row=0, column=4, sticky="w")
+        ttk.Label(frame, text="S-param goal dB").grid(row=0, column=4, sticky="w")
         ttk.Entry(frame, textvariable=self.s11_goal, width=10).grid(row=0, column=5, sticky="w", padx=8)
 
         ttk.Button(frame, text="Save Config", command=self.save_config).grid(row=0, column=6, sticky="ew", padx=4)
@@ -249,11 +249,13 @@ class SweepGui(Tk):
             scoring = config.get("scoring", {})
             runs_dir = Path(config.get("project", {}).get("runs_dir", "runs"))
             patterns = config.get("results", {}).get("s11_file_patterns")
+            s21_patterns = config.get("results", {}).get("s21_file_patterns")
             rows = analyze_runs(
                 runs_dir=runs_dir,
                 target_frequency_ghz=scoring.get("target_frequency_ghz"),
                 s11_goal_db=scoring.get("s11_goal_db", -10.0),
                 patterns=patterns if patterns else None,
+                s21_patterns=s21_patterns if s21_patterns else None,
             )
             output_path = runs_dir / "analysis_results.csv"
             write_analysis_csv(output_path, rows)
@@ -264,12 +266,14 @@ class SweepGui(Tk):
                 self.log_queue.put(
                     "Best run: "
                     f"{best.get('run')} | "
+                    f"S21@target={best.get('s21_at_target_db')} dB | "
+                    f"SE@target={best.get('shielding_effectiveness_at_target_db')} dB | "
                     f"S11@target={best.get('s11_at_target_db')} dB | "
                     f"min={best.get('s11_min_db')} dB | "
                     f"BW={best.get('bandwidth_10db_ghz')} GHz"
                 )
             elif rows:
-                self.log_queue.put("No S11 files found yet. Export S11 into each run folder, then analyze again.")
+                self.log_queue.put("No S-parameter files found yet. Export S21 or S11 into each run folder.")
         except Exception:
             self.log_queue.put(traceback.format_exc())
 
@@ -355,7 +359,17 @@ class SweepGui(Tk):
                     "*S11*.csv",
                     "*s11*.txt",
                     "*S11*.txt",
-                ]
+                ],
+                "s21_file_patterns": [
+                    "s21.csv",
+                    "result_s21.csv",
+                    "s21.txt",
+                    "result_s21.txt",
+                    "*s21*.csv",
+                    "*S21*.csv",
+                    "*s21*.txt",
+                    "*S21*.txt",
+                ],
             },
             "scoring": {
                 "target_frequency_ghz": self._optional_float(self.target_frequency.get()),

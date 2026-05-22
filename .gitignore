@@ -2,6 +2,7 @@ __pycache__/
 *.pyc
 .venv/
 runs/
+runs_shield_mesh_3x3/
 *.log
 *.cst
 *.cst~

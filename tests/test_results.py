@@ -41,6 +41,25 @@ class ResultAnalysisTests(unittest.TestCase):
         self.assertAlmostEqual(points[0].frequency_ghz, 2.3)
         self.assertAlmostEqual(points[1].frequency_ghz, 2.45)
 
+    def test_analyzes_s21_shielding_effectiveness(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = Path(tmp)
+            (run_dir / "s21.csv").write_text(
+                "freq_ghz,s21_db\n"
+                "8,-20\n"
+                "10,-35\n"
+                "12,-30\n",
+                encoding="utf-8",
+            )
+
+            metrics = analyze_run_dir(run_dir, target_frequency_ghz=10.0, s11_goal_db=-10.0)
+
+        self.assertEqual(metrics["result_status"], "analyzed")
+        self.assertEqual(metrics["s21_min_db"], -35.0)
+        self.assertEqual(metrics["s21_at_target_db"], -35.0)
+        self.assertEqual(metrics["shielding_effectiveness_at_target_db"], 35.0)
+        self.assertEqual(metrics["score"], -35.0)
+
 
 if __name__ == "__main__":
     unittest.main()

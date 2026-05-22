@@ -66,6 +66,7 @@ def run_sweep(config: dict[str, Any], config_path: Path, dry_run: bool) -> None:
                 target_frequency_ghz=scoring_config.get("target_frequency_ghz"),
                 s11_goal_db=scoring_config.get("s11_goal_db", -10.0),
                 patterns=result_config.get("s11_file_patterns") or None,
+                s21_patterns=result_config.get("s21_file_patterns") or None,
             )
         )
         rows.append(row)
