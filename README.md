@@ -4,9 +4,12 @@
 
 이 프로젝트는 LLM API를 직접 연결하지 않습니다. 로컬 LLM은 번역기처럼 쓰고, 이 프로그램은 번역된 JSON 명령서를 읽어서 CST 자동화 명령으로 실행합니다.
 
+처음 쓰는 경우에는 [MANUAL.md](./MANUAL.md)를 먼저 보면 됩니다. 다운로드, GUI 실행, 로컬 LLM 사용법, CST 없이 테스트하는 방법까지 순서대로 정리해두었습니다.
+
 ## 지금 들어있는 것
 
 ```text
+MANUAL.md                         # 친절한 사용 설명서
 cst_vibe_gui.py                    # GUI 실행 파일
 cst_vibe_runner.py                 # JSON/YAML 명령서 실행기
 prompt_for_local_llm.md            # 로컬 LLM에 넣을 프롬프트
