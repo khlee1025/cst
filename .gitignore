@@ -1,10 +1,6 @@
 __pycache__/
-*.pyc
+*.py[cod]
+.cst_vibe_gui_last_plan.json
+output/
 .venv/
-runs/
-runs_shield_mesh_3x3/
-*.log
-*.cst
-*.cst~
-*.bak
-*.tmp
+venv/
