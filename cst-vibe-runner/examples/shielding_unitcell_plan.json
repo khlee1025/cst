@@ -1,0 +1,83 @@
+{
+  "project": {
+    "mode": "new",
+    "save_as": "output/shielding_unitcell_baseline.cst"
+  },
+  "parameters": {
+    "p": "10",
+    "sub_t": "0.8",
+    "copper_t": "0.035",
+    "patch_w": "7.2",
+    "gap": "0.4",
+    "fmin": "1",
+    "fmax": "18"
+  },
+  "commands": [
+    {
+      "op": "units",
+      "geometry": "mm",
+      "frequency": "GHz",
+      "time": "ns"
+    },
+    {
+      "op": "frequency_range",
+      "fmin": "fmin",
+      "fmax": "fmax"
+    },
+    {
+      "op": "boundary",
+      "xmin": "unit cell",
+      "xmax": "unit cell",
+      "ymin": "unit cell",
+      "ymax": "unit cell",
+      "zmin": "open",
+      "zmax": "open"
+    },
+    {
+      "op": "material",
+      "name": "FR4_local",
+      "epsilon": "4.3",
+      "mue": "1.0",
+      "tand": "0.02",
+      "color": [0.1, 0.55, 0.25]
+    },
+    {
+      "op": "brick",
+      "name": "substrate",
+      "component": "unitcell",
+      "material": "FR4_local",
+      "xrange": ["-p/2", "p/2"],
+      "yrange": ["-p/2", "p/2"],
+      "zrange": ["0", "sub_t"]
+    },
+    {
+      "op": "brick",
+      "name": "top_patch",
+      "component": "unitcell",
+      "material": "Copper (annealed)",
+      "xrange": ["-patch_w/2", "patch_w/2"],
+      "yrange": ["-patch_w/2", "patch_w/2"],
+      "zrange": ["sub_t", "sub_t+copper_t"]
+    },
+    {
+      "op": "discrete_port",
+      "name": "1",
+      "point1": [0, 0, "-2"],
+      "point2": [0, 0, "0"],
+      "impedance": 50
+    },
+    {
+      "op": "discrete_port",
+      "name": "2",
+      "point1": [0, 0, "sub_t+copper_t"],
+      "point2": [0, 0, "sub_t+copper_t+2"],
+      "impedance": 50
+    },
+    {
+      "op": "rebuild"
+    },
+    {
+      "op": "save"
+    }
+  ]
+}
