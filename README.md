@@ -21,7 +21,7 @@ examples/
 
 GitHub 화면에서 받는 방법:
 
-1. 브랜치가 `codex/cst-vibe-runner`인지 확인합니다.
+1. 브랜치가 `master`인지 확인합니다.
 2. 저장소 루트 화면으로 이동합니다.
 3. 오른쪽 위 `Code` 버튼을 누릅니다.
 4. `Download ZIP`을 누릅니다.
@@ -29,12 +29,12 @@ GitHub 화면에서 받는 방법:
 
 바로 받기:
 
-[Download ZIP](https://github.com/khlee1025/cst/archive/refs/heads/codex/cst-vibe-runner.zip)
+[Download ZIP](https://github.com/khlee1025/cst/archive/refs/heads/master.zip)
 
 Git으로 받기:
 
 ```powershell
-git clone -b codex/cst-vibe-runner https://github.com/khlee1025/cst.git
+git clone https://github.com/khlee1025/cst.git
 cd cst
 ```
 
