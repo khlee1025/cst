@@ -116,13 +116,30 @@ class CSTSession:
             raise PlanError("project.mode must be 'new' or 'open'.")
 
     def add_history(self, name: str, code: str) -> None:
+        name_text = str(name).strip()
+        code_text = str(code).strip()
+        if not name_text or not code_text:
+            raise PlanError(
+                "AddToHistory requires non-empty name and code. "
+                f"name={name_text!r}, code_length={len(code_text)}"
+            )
         if self.dry_run:
-            print(f"\n--- AddToHistory: {name} ---")
-            print(code.rstrip())
+            print(f"\n--- AddToHistory: {name_text} ---")
+            print(code_text)
             print("--- end ---")
             return
         self._require_mws()
-        self.mws.AddToHistory(name, code)
+        print(f"[cst] AddToHistory: {name_text}")
+        try:
+            self.mws.AddToHistory(name_text, code_text)
+        except Exception as exc:
+            raise PlanError(
+                "CST AddToHistory failed. CST is connected, but it rejected this "
+                "macro block.\n\n"
+                f"History name:\n{name_text}\n\n"
+                f"Macro code:\n{code_text}\n\n"
+                f"Original error:\n{exc}"
+            ) from exc
 
     def store_parameter(self, name: str, value: Any) -> None:
         if self.dry_run:

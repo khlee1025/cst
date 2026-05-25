@@ -198,6 +198,9 @@ class CSTVibeGUI:
         ttk.Button(toolbar, text="열기", command=self.open_plan).pack(side=LEFT, padx=(0, 6))
         ttk.Button(toolbar, text="저장", command=self.save_plan).pack(side=LEFT, padx=6)
         ttk.Button(toolbar, text="다른 이름 저장", command=self.save_plan_as).pack(side=LEFT, padx=6)
+        ttk.Button(toolbar, text="CST 연동 테스트", command=self.run_connection_test).pack(
+            side=LEFT, padx=6
+        )
 
         ttk.Button(toolbar, text="CST 실행", style="Accent.TButton", command=self.run_cst).pack(
             side=RIGHT, padx=(6, 0)
@@ -334,19 +337,37 @@ class CSTVibeGUI:
     def run_cst(self) -> None:
         self.run_plan(dry_run=False)
 
-    def run_plan(self, dry_run: bool) -> None:
+    def run_connection_test(self) -> None:
+        plan_text = json.dumps(
+            {
+                "project": {"mode": "new"},
+                "parameters": {},
+                "commands": [],
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+        self.run_plan(dry_run=False, plan_text=plan_text, mode_label="CST 연동 테스트")
+
+    def run_plan(
+        self,
+        dry_run: bool,
+        plan_text: str | None = None,
+        mode_label: str | None = None,
+    ) -> None:
         if self.running:
             messagebox.showinfo("실행 중", "이미 실행 중입니다.")
             return
 
+        text = self.current_plan_text() if plan_text is None else plan_text
         try:
-            json.loads(self.current_plan_text())
+            json.loads(text)
         except json.JSONDecodeError as exc:
             messagebox.showerror("JSON 오류", f"{exc.msg}\nline {exc.lineno}, column {exc.colno}")
             return
 
         try:
-            TEMP_PLAN.write_text(self.current_plan_text(), encoding="utf-8")
+            TEMP_PLAN.write_text(text, encoding="utf-8")
         except OSError as exc:
             messagebox.showerror("임시 파일 저장 실패", str(exc))
             return
@@ -359,7 +380,7 @@ class CSTVibeGUI:
 
         self.running = True
         self.clear_output()
-        mode = "드라이런" if dry_run else "CST 실행"
+        mode = mode_label or ("드라이런" if dry_run else "CST 실행")
         self.append_output(f"$ {' '.join(cmd)}\n\n")
         self.set_status(f"{mode} 중...")
         self.notebook.select(1)
