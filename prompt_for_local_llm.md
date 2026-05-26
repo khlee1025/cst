@@ -92,6 +92,45 @@ Example JSON:
       "fmax": "fmax"
     },
     {
+      "op": "brick",
+      "name": "thread_top_x",
+      "component": "unitcell",
+      "material": "PEC",
+      "xrange": ["0", "length"],
+      "yrange": ["-width", "0"],
+      "zrange": ["0", "thickness"]
+    },
+    {
+      "op": "brick",
+      "name": "thread_left_y",
+      "component": "unitcell",
+      "material": "PEC",
+      "xrange": ["0", "width"],
+      "yrange": ["-length", "0"],
+      "zrange": ["0", "thickness"]
+    },
+    {
+      "op": "brick",
+      "name": "thread_bottom_x",
+      "component": "unitcell",
+      "material": "PEC",
+      "xrange": ["0", "length"],
+      "yrange": ["-length", "-length+width"],
+      "zrange": ["0", "thickness"]
+    },
+    {
+      "op": "brick",
+      "name": "thread_right_y",
+      "component": "unitcell",
+      "material": "PEC",
+      "xrange": ["length-width", "length"],
+      "yrange": ["-length", "0"],
+      "zrange": ["0", "thickness"]
+    },
+    {
+      "op": "rebuild"
+    },
+    {
       "op": "boundary",
       "xmin": "unit cell",
       "xmax": "unit cell",
@@ -106,42 +145,6 @@ Example JSON:
       "ports": ["Zmin", "Zmax"],
       "theta": "0",
       "phi": "0"
-    },
-    {
-      "op": "brick",
-      "name": "thread_top_x",
-      "component": "unitcell",
-      "material": "Copper (annealed)",
-      "xrange": ["0", "length"],
-      "yrange": ["-width", "0"],
-      "zrange": ["0", "thickness"]
-    },
-    {
-      "op": "brick",
-      "name": "thread_left_y",
-      "component": "unitcell",
-      "material": "Copper (annealed)",
-      "xrange": ["0", "width"],
-      "yrange": ["-length", "0"],
-      "zrange": ["0", "thickness"]
-    },
-    {
-      "op": "brick",
-      "name": "thread_bottom_x",
-      "component": "unitcell",
-      "material": "Copper (annealed)",
-      "xrange": ["0", "length"],
-      "yrange": ["-length", "-length+width"],
-      "zrange": ["0", "thickness"]
-    },
-    {
-      "op": "brick",
-      "name": "thread_right_y",
-      "component": "unitcell",
-      "material": "Copper (annealed)",
-      "xrange": ["length-width", "length"],
-      "yrange": ["-length", "0"],
-      "zrange": ["0", "thickness"]
     },
     {
       "op": "rebuild"

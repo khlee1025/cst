@@ -28,7 +28,7 @@ def load_plan(path: Path) -> dict[str, Any]:
     if not path.exists():
         raise PlanError(f"Plan file not found: {path}")
 
-    text = path.read_text(encoding="utf-8")
+    text = path.read_text(encoding="utf-8-sig")
     suffix = path.suffix.lower()
 
     if suffix == ".json":
@@ -440,6 +440,33 @@ class CSTSession:
         self._require_mws()
         self.mws.Rebuild()
 
+    def start_solver(self, solver: str | None = None) -> None:
+        order = ["Solver", "FDSolver"]
+        if solver == "frequency_direct":
+            order = ["FDSolver", "Solver"]
+        if solver == "time":
+            order = ["Solver"]
+        if self.dry_run:
+            print(f"[dry-run] Start solver via {order[0]}.Start")
+            return
+        self._require_mws()
+        errors: list[str] = []
+        for object_name in order:
+            try:
+                solver_object = getattr(self.mws, object_name)
+                solver_object.Start()
+                print(f"[cst] {object_name}.Start completed")
+                return
+            except Exception as exc:
+                errors.append(f"{object_name}.Start failed: {exc}")
+        name, code = macro_solver_start({"solver": solver})
+        try:
+            self.add_history(name, code)
+            return
+        except Exception as exc:
+            errors.append(f"AddToHistory fallback failed: {exc}")
+        raise PlanError("CST solver start failed.\n" + "\n".join(errors))
+
     def save(self) -> None:
         if self.skip_saves:
             print("[save] Save skipped by --no-project-save.")
@@ -763,6 +790,8 @@ def execute_one_command(session: CSTSession, raw: Any, index: int) -> None:
         execute_sweep(session, command)
     elif op == "case_sweep":
         execute_case_sweep(session, command)
+    elif op == "solver_start":
+        session.start_solver(command.get("solver"))
     elif op in MACRO_BUILDERS:
         name, code = MACRO_BUILDERS[op](command)
         session.add_history(str(command.get("name_for_history", name)), code)

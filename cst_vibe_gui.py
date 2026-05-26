@@ -760,6 +760,47 @@ class CSTVibeGUI:
             {"op": "units", "geometry": "um", "frequency": "GHz", "time": "ns"},
             {"op": "frequency_range", "fmin": "fmin", "fmax": "fmax"},
         ]
+        commands.extend(
+            [
+                {
+                    "op": "brick",
+                    "name": "thread_top_x",
+                    "component": "unitcell",
+                    "material": "PEC",
+                    "xrange": ["0", "length"],
+                    "yrange": ["-width", "0"],
+                    "zrange": ["0", "thickness"],
+                },
+                {
+                    "op": "brick",
+                    "name": "thread_left_y",
+                    "component": "unitcell",
+                    "material": "PEC",
+                    "xrange": ["0", "width"],
+                    "yrange": ["-length", "0"],
+                    "zrange": ["0", "thickness"],
+                },
+                {
+                    "op": "brick",
+                    "name": "thread_bottom_x",
+                    "component": "unitcell",
+                    "material": "PEC",
+                    "xrange": ["0", "length"],
+                    "yrange": ["-length", "-length+width"],
+                    "zrange": ["0", "thickness"],
+                },
+                {
+                    "op": "brick",
+                    "name": "thread_right_y",
+                    "component": "unitcell",
+                    "material": "PEC",
+                    "xrange": ["length-width", "length"],
+                    "yrange": ["-length", "0"],
+                    "zrange": ["0", "thickness"],
+                },
+                {"op": "rebuild"},
+            ]
+        )
         if self.include_boundary.get():
             commands.append(
                 {
@@ -772,52 +813,14 @@ class CSTVibeGUI:
                     "zmax": "open",
                 }
             )
-        commands.append(
-            {
-                "op": "floquet_port",
-                "modes": self.floquet_modes.get().strip() or "2",
-                "ports": ["Zmin", "Zmax"],
-                "theta": "0",
-                "phi": "0",
-            }
-        )
         commands.extend(
             [
                 {
-                    "op": "brick",
-                    "name": "thread_top_x",
-                    "component": "unitcell",
-                    "material": "Copper (annealed)",
-                    "xrange": ["0", "length"],
-                    "yrange": ["-width", "0"],
-                    "zrange": ["0", "thickness"],
-                },
-                {
-                    "op": "brick",
-                    "name": "thread_left_y",
-                    "component": "unitcell",
-                    "material": "Copper (annealed)",
-                    "xrange": ["0", "width"],
-                    "yrange": ["-length", "0"],
-                    "zrange": ["0", "thickness"],
-                },
-                {
-                    "op": "brick",
-                    "name": "thread_bottom_x",
-                    "component": "unitcell",
-                    "material": "Copper (annealed)",
-                    "xrange": ["0", "length"],
-                    "yrange": ["-length", "-length+width"],
-                    "zrange": ["0", "thickness"],
-                },
-                {
-                    "op": "brick",
-                    "name": "thread_right_y",
-                    "component": "unitcell",
-                    "material": "Copper (annealed)",
-                    "xrange": ["length-width", "length"],
-                    "yrange": ["-length", "0"],
-                    "zrange": ["0", "thickness"],
+                    "op": "floquet_port",
+                    "modes": self.floquet_modes.get().strip() or "2",
+                    "ports": ["Zmin", "Zmax"],
+                    "theta": "0",
+                    "phi": "0",
                 },
                 {"op": "rebuild"},
                 {"op": "save"},

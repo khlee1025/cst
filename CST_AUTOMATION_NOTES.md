@@ -48,6 +48,8 @@ Solver.Start
 
 기본 단일 해석에서는 `StoreParameter`를 쓰지 않습니다. Python이 `length-width` 같은 식을 먼저 숫자로 계산해서 CST에 넘겨야 `New Parameter` 입력창이 뜨지 않습니다.
 
+러너에서는 `solver_start`를 일반 형상 명령처럼 `AddToHistory`에만 넣지 않고, COM 객체의 `Solver.Start()`를 먼저 직접 호출합니다. 실패할 때만 `AddToHistory` 매크로 방식으로 fallback합니다.
+
 ## Parameter Sweep
 
 Python이 각 케이스마다 새 CST 프로젝트를 여는 방식은 기본 흐름이 아닙니다.
