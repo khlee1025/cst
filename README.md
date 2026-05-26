@@ -198,7 +198,7 @@ runs/
 
 ### 파라미터 스윕
 
-`width`, `length`, `thickness`, `fmin`, `fmax` 같은 값을 여러 번 바꿔가며 실행합니다.
+`width`, `length`, `thickness`, `fmin`, `fmax` 같은 값을 여러 번 바꿔가며 실행합니다. 단일 변수도 되고, 전체 변수 조합도 됩니다.
 
 예:
 
@@ -206,6 +206,20 @@ runs/
 parameter = width
 values = 5, 10, 15
 ```
+
+전체 변수 조합 예:
+
+```text
+스윕 파라미터 = 전체 변수 조합
+
+length=80,100,120
+width=5,10,15
+thickness=1,2,3
+fmin=1
+fmax=18
+```
+
+위 예시는 `3 x 3 x 3 x 1 x 1 = 27`개 케이스를 만듭니다.
 
 이 기능은 CST 내부 파라미터를 흔드는 방식이 아닙니다. 각 값마다 JSON을 새로 만들고, Python이 좌표를 다시 계산해서 CST에 숫자로 넘깁니다. 그래서 `New Parameter` 팝업을 피할 수 있습니다.
 

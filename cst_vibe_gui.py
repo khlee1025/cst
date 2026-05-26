@@ -19,6 +19,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+from itertools import product
 from pathlib import Path
 from tkinter import BOTH, END, LEFT, RIGHT, X, BooleanVar, StringVar, Tk, Toplevel
 from tkinter import filedialog, messagebox
@@ -32,6 +33,7 @@ EXAMPLE_PLAN = APP_DIR / "examples" / "02_mesh_frame_unitcell.json"
 PROMPT_FILE = APP_DIR / "prompt_for_local_llm.md"
 RUNTIME_TMP = Path(tempfile.gettempdir()) / "cst_vibe_runner"
 LLM_CONFIG = APP_DIR / "cst_llm_config.json"
+SWEEP_ALL = "전체 변수 조합"
 
 
 def extract_json_object(text: str) -> dict:
@@ -402,7 +404,7 @@ class CSTVibeGUI:
         self.seed_sweep_defaults()
         win = Toplevel(self.root)
         win.title("파라미터 스윕")
-        win.geometry("560x430")
+        win.geometry("620x600")
         win.transient(self.root)
         win.grab_set()
         frm = ttk.Frame(win, padding=16)
@@ -413,7 +415,7 @@ class CSTVibeGUI:
         param_box = ttk.Combobox(
             frm,
             textvariable=self.sweep_parameter,
-            values=("width", "length", "thickness", "fmin", "fmax"),
+            values=("width", "length", "thickness", "fmin", "fmax", SWEEP_ALL),
             state="readonly",
         )
         param_box.set(self.sweep_parameter.get() or "width")
@@ -424,55 +426,68 @@ class CSTVibeGUI:
 
         ttk.Label(
             frm,
-            text="쉼표 또는 공백으로 구분하세요. 예: 5, 10, 15",
+            text="단일 변수일 때 사용합니다. 예: 5, 10, 15",
             foreground=self.colors["muted"],
         ).grid(row=2, column=0, columnspan=2, sticky="w", pady=(0, 12))
 
+        ttk.Label(frm, text="전체 변수 값표").grid(row=3, column=0, sticky="nw", pady=5)
+        matrix_text = ScrolledText(frm, height=7, wrap="word", font=("Cascadia Mono", 9), bg="#fbfdff", bd=0)
+        matrix_text.grid(row=3, column=1, sticky="nsew", pady=5)
+        matrix_text.insert("1.0", self.default_sweep_matrix_text())
+        ttk.Label(
+            frm,
+            text="전체 변수 조합 선택 시 사용합니다. 한 줄에 하나씩: width=5,10,15",
+            foreground=self.colors["muted"],
+        ).grid(row=4, column=0, columnspan=2, sticky="w", pady=(0, 8))
+
         preview = ScrolledText(frm, height=7, wrap="word", font=("Malgun Gothic", 9), bg="#f8fafc", bd=0)
-        preview.grid(row=3, column=0, columnspan=2, sticky="nsew", pady=(0, 10))
-        frm.rowconfigure(3, weight=1)
+        preview.grid(row=5, column=0, columnspan=2, sticky="nsew", pady=(0, 10))
+        frm.rowconfigure(5, weight=1)
 
         def refresh_preview() -> None:
             preview.delete("1.0", END)
             try:
                 parameter = self.sweep_parameter.get().strip()
-                values = self.parse_sweep_values()
                 plan = self.current_plan()
                 params = plan.get("parameters", {}) if isinstance(plan, dict) else {}
-                current = params.get(parameter, "없음") if isinstance(params, dict) else "없음"
+                values = self.parse_sweep_values()
+                cases = self.build_sweep_cases(plan, parameter, values, matrix_text.get("1.0", "end-1c"))
+                current = params.get(parameter, "여러 변수") if isinstance(params, dict) else "없음"
                 lines = [
                     f"현재 {parameter} = {current}",
-                    f"생성될 케이스: {len(values)}개",
+                    f"생성될 케이스: {len(cases)}개",
                     "",
                 ]
-                for value in values:
-                    lines.append(f"- {parameter} = {value}")
+                for case in cases[:30]:
+                    lines.append("- " + ", ".join(f"{key}={value}" for key, value in case.items()))
+                if len(cases) > 30:
+                    lines.append(f"... 외 {len(cases) - 30}개")
                 lines.extend(["", "드라이런: runs 폴더를 만들지 않습니다.", "실행 + 결과폴더: 값마다 runs 폴더를 만듭니다."])
                 preview.insert("1.0", "\n".join(lines))
             except Exception as exc:
                 preview.insert("1.0", f"미리보기 오류: {exc}")
 
         ttk.Button(frm, text="미리보기 갱신", command=refresh_preview).grid(
-            row=4, column=0, columnspan=2, sticky="ew", pady=(0, 6)
+            row=6, column=0, columnspan=2, sticky="ew", pady=(0, 6)
         )
 
         ttk.Button(
             frm,
             text="스윕 드라이런",
-            command=lambda: self.start_sweep_from_dialog(win, dry_run=True),
-        ).grid(row=5, column=0, columnspan=2, sticky="ew", pady=4)
+            command=lambda: self.start_sweep_from_dialog(win, dry_run=True, matrix_text=matrix_text.get("1.0", "end-1c")),
+        ).grid(row=7, column=0, columnspan=2, sticky="ew", pady=4)
         ttk.Button(
             frm,
             text="스윕 실행 + 결과폴더",
             style="Accent.TButton",
-            command=lambda: self.start_sweep_from_dialog(win, dry_run=False),
-        ).grid(row=6, column=0, columnspan=2, sticky="ew", pady=4)
+            command=lambda: self.start_sweep_from_dialog(win, dry_run=False, matrix_text=matrix_text.get("1.0", "end-1c")),
+        ).grid(row=8, column=0, columnspan=2, sticky="ew", pady=4)
 
         ttk.Label(
             frm,
             text="각 값마다 JSON을 새로 만들고 runs 폴더를 따로 생성합니다.",
             foreground=self.colors["muted"],
-        ).grid(row=7, column=0, columnspan=2, sticky="w", pady=(12, 0))
+        ).grid(row=9, column=0, columnspan=2, sticky="w", pady=(12, 0))
         refresh_preview()
 
     def seed_sweep_defaults(self) -> None:
@@ -499,6 +514,38 @@ class CSTVibeGUI:
                     if not self.sweep_values.get().strip():
                         self.sweep_values.set("5, 10, 15")
 
+    def default_sweep_matrix_text(self) -> str:
+        try:
+            plan = self.current_plan()
+            params = plan.get("parameters", {}) if isinstance(plan, dict) else {}
+        except Exception:
+            params = {}
+
+        def values_for(key: str) -> str:
+            raw = params.get(key) if isinstance(params, dict) else None
+            try:
+                value = float(raw)
+            except Exception:
+                defaults = {
+                    "length": "80, 100, 120",
+                    "width": "5, 10, 15",
+                    "thickness": "1, 2, 3",
+                    "fmin": "1",
+                    "fmax": "18",
+                }
+                return defaults[key]
+            if key == "width":
+                values = [max(value * 0.5, 0.001), value, value * 1.5]
+            elif key in {"length", "thickness"}:
+                values = [max(value * 0.8, 0.001), value, value * 1.2]
+            else:
+                values = [value]
+            return ", ".join(f"{item:.12g}" for item in values)
+
+        return "\n".join(
+            f"{key}={values_for(key)}" for key in ("length", "width", "thickness", "fmin", "fmax")
+        )
+
     def parse_sweep_values(self) -> list[str]:
         raw = self.sweep_values.get().strip()
         values = [item for item in re.split(r"[\s,]+", raw) if item]
@@ -508,11 +555,11 @@ class CSTVibeGUI:
             float(value)
         return values
 
-    def start_sweep_from_dialog(self, win: Toplevel, dry_run: bool) -> None:
-        if self.start_sweep(dry_run=dry_run):
+    def start_sweep_from_dialog(self, win: Toplevel, dry_run: bool, matrix_text: str = "") -> None:
+        if self.start_sweep(dry_run=dry_run, matrix_text=matrix_text):
             win.destroy()
 
-    def start_sweep(self, dry_run: bool) -> bool:
+    def start_sweep(self, dry_run: bool, matrix_text: str = "") -> bool:
         if self.running:
             messagebox.showinfo("실행 중", "이미 실행 중입니다.")
             return False
@@ -522,7 +569,8 @@ class CSTVibeGUI:
             base_plan = self.current_plan()
             parameter = self.sweep_parameter.get().strip()
             values = self.parse_sweep_values()
-            commands, cleanup_files = self.build_sweep_commands(base_plan, parameter, values, dry_run=dry_run)
+            cases = self.build_sweep_cases(base_plan, parameter, values, matrix_text)
+            commands, cleanup_files = self.build_sweep_commands(base_plan, cases, dry_run=dry_run)
         except Exception as exc:
             messagebox.showerror("스윕 준비 실패", str(exc))
             return False
@@ -535,12 +583,19 @@ class CSTVibeGUI:
         self.notebook.select(0)
         mode = "스윕 드라이런" if dry_run else "스윕 실행 + 결과폴더"
         self.status.set(f"{mode} 중...")
-        self.append_output(f"[sweep] parameter={parameter}, values={', '.join(values)}\n\n")
+        self.append_output(f"[sweep] mode={parameter}, cases={len(cases)}\n")
+        for case in cases[:30]:
+            self.append_output("[sweep] " + ", ".join(f"{key}={value}" for key, value in case.items()) + "\n")
+        if len(cases) > 30:
+            self.append_output(f"[sweep] ... 외 {len(cases) - 30}개\n")
+        self.append_output("\n")
         threading.Thread(target=self.sweep_worker, args=(commands, mode, cleanup_files), daemon=True).start()
         self.root.after(80, self.drain_output_queue)
         return True
 
-    def build_sweep_commands(self, base_plan: dict, parameter: str, values: list[str], dry_run: bool) -> tuple[list[list[str]], list[Path]]:
+    def build_sweep_cases(self, base_plan: dict, parameter: str, values: list[str], matrix_text: str) -> list[dict[str, str]]:
+        if parameter == SWEEP_ALL:
+            return self.parse_sweep_matrix(base_plan, matrix_text)
         if not parameter:
             raise ValueError("스윕 파라미터 이름이 비어 있습니다.")
         params = base_plan.get("parameters")
@@ -548,19 +603,60 @@ class CSTVibeGUI:
             raise ValueError("parameters는 object여야 합니다.")
         if parameter not in params:
             raise ValueError(f"현재 JSON parameters에 '{parameter}'가 없습니다.")
+        return [{parameter: value} for value in values]
+
+    def parse_sweep_matrix(self, base_plan: dict, matrix_text: str) -> list[dict[str, str]]:
+        params = base_plan.get("parameters")
+        if not isinstance(params, dict):
+            raise ValueError("parameters는 object여야 합니다.")
+        series: dict[str, list[str]] = {}
+        for line in matrix_text.splitlines():
+            stripped = line.strip()
+            if not stripped or stripped.startswith("#"):
+                continue
+            if "=" in stripped:
+                key, raw_values = stripped.split("=", 1)
+            elif ":" in stripped:
+                key, raw_values = stripped.split(":", 1)
+            else:
+                raise ValueError(f"값표 형식이 잘못되었습니다: {line}")
+            key = key.strip()
+            if key not in params:
+                raise ValueError(f"현재 JSON parameters에 '{key}'가 없습니다.")
+            values = [item for item in re.split(r"[\s,]+", raw_values.strip()) if item]
+            if not values:
+                raise ValueError(f"{key} 값 목록이 비어 있습니다.")
+            for value in values:
+                float(value)
+            series[key] = values
+        if not series:
+            raise ValueError("전체 변수 값표가 비어 있습니다.")
+        keys = list(series)
+        cases = [{key: value for key, value in zip(keys, combo)} for combo in product(*(series[key] for key in keys))]
+        if len(cases) > 500:
+            raise ValueError(f"스윕 케이스가 {len(cases)}개입니다. 500개 이하로 줄여 주세요.")
+        return cases
+
+    def build_sweep_commands(self, base_plan: dict, cases: list[dict[str, str]], dry_run: bool) -> tuple[list[list[str]], list[Path]]:
+        params = base_plan.get("parameters")
+        if not isinstance(params, dict):
+            raise ValueError("parameters는 object여야 합니다.")
 
         commands: list[list[str]] = []
         cleanup_files: list[Path] = []
-        for index, value in enumerate(values, start=1):
+        for index, updates in enumerate(cases, start=1):
             plan = copy.deepcopy(base_plan)
             plan_params = plan.setdefault("parameters", {})
             if not isinstance(plan_params, dict):
                 raise ValueError("parameters는 object여야 합니다.")
-            plan_params[parameter] = value
+            for key, value in updates.items():
+                if key not in params:
+                    raise ValueError(f"현재 JSON parameters에 '{key}'가 없습니다.")
+                plan_params[key] = value
 
             base_id = str(plan.get("design_id") or plan.get("name") or "mesh_frame_unitcell")
-            value_slug = self.safe_slug(value)
-            plan["design_id"] = f"{base_id}_{parameter}{value_slug}"
+            case_slug = "_".join(f"{key}{self.safe_slug(value)}" for key, value in updates.items())
+            plan["design_id"] = f"{base_id}_{case_slug}"
             project = plan.setdefault("project", {"mode": "new"})
             if not isinstance(project, dict):
                 raise ValueError("project는 object여야 합니다.")
@@ -568,7 +664,7 @@ class CSTVibeGUI:
 
             plan_path = self.write_runtime_plan(
                 json.dumps(plan, ensure_ascii=False, indent=2) + "\n",
-                f"sweep_{index:03d}_{self.safe_slug(parameter)}_{value_slug}",
+                f"sweep_{index:03d}_{self.safe_slug(case_slug)}",
             )
             cleanup_files.append(plan_path)
             cmd = [sys.executable, str(RUNNER), str(plan_path), "--prog-id", self.prog_id.get().strip()]
