@@ -25,7 +25,7 @@ from tkinter import ttk
 
 APP_DIR = Path(__file__).resolve().parent
 RUNNER = APP_DIR / "cst_vibe_runner.py"
-EXAMPLE_PLAN = APP_DIR / "examples" / "02_patch_unitcell_no_ports.json"
+EXAMPLE_PLAN = APP_DIR / "examples" / "02_mesh_frame_unitcell.json"
 PROMPT_FILE = APP_DIR / "prompt_for_local_llm.md"
 TEMP_PLAN = APP_DIR / ".cst_vibe_gui_last_plan.json"
 LLM_CONFIG = APP_DIR / "cst_llm_config.json"
@@ -63,14 +63,11 @@ class CSTVibeGUI:
         self.plan_source = StringVar(value="example")
 
         self.wizard_vars = {
-            "p": StringVar(value="10"),
-            "sub_t": StringVar(value="0.8"),
-            "copper_t": StringVar(value="0.035"),
-            "patch_w": StringVar(value="7.2"),
+            "length": StringVar(value="100"),
+            "width": StringVar(value="10"),
+            "thickness": StringVar(value="2"),
             "fmin": StringVar(value="1"),
             "fmax": StringVar(value="18"),
-            "epsilon": StringVar(value="4.3"),
-            "tand": StringVar(value="0.02"),
         }
         self.include_boundary = BooleanVar(value=False)
 
@@ -176,9 +173,9 @@ class CSTVibeGUI:
         self.request_text.grid(row=1, column=0, sticky="nsew", pady=(8, 12))
         self.request_text.insert(
             "1.0",
-            "포트 없이 패치 유닛셀 만들어줘.\n"
-            "p=10, sub_t=0.8, copper_t=0.035, patch_w=7.2, fmin=1, fmax=18.\n"
-            "단위는 mm, GHz, ns.",
+            "모기장 구조의 ㅁ자 유닛셀을 만들어줘.\n"
+            "length=100, width=10, thickness=2, fmin=1, fmax=18.\n"
+            "원점 기준으로 x+ 방향과 y- 방향으로 실을 만들고 대칭 이동해서 ㅁ자를 만들어줘. 단위는 um, GHz.",
         )
 
         actions = ttk.Frame(parent, style="Panel.TFrame")
@@ -307,14 +304,11 @@ class CSTVibeGUI:
         frm.columnconfigure(1, weight=1)
 
         labels = {
-            "p": "p 주기 mm",
-            "sub_t": "sub_t 기판두께 mm",
-            "copper_t": "copper_t 구리두께 mm",
-            "patch_w": "patch_w 패치폭 mm",
+            "length": "length 외곽 길이 um",
+            "width": "width 실 폭 um",
+            "thickness": "thickness 두께 um",
             "fmin": "fmin GHz",
             "fmax": "fmax GHz",
-            "epsilon": "epsilon",
-            "tand": "tand",
         }
         for row, (key, var) in enumerate(self.wizard_vars.items()):
             ttk.Label(frm, text=labels[key]).grid(row=row, column=0, sticky="w", pady=4)
@@ -349,14 +343,14 @@ class CSTVibeGUI:
             if not value:
                 raise ValueError(f"{key} 값이 비어 있습니다.")
         numeric = {key: float(value) for key, value in values.items()}
-        if numeric["p"] <= 0:
-            raise ValueError("p는 0보다 커야 합니다.")
-        if numeric["sub_t"] <= 0 or numeric["copper_t"] <= 0:
-            raise ValueError("sub_t와 copper_t는 0보다 커야 합니다.")
-        if numeric["patch_w"] <= 0:
-            raise ValueError("patch_w는 0보다 커야 합니다.")
-        if numeric["patch_w"] >= numeric["p"]:
-            raise ValueError("patch_w는 p보다 작아야 합니다.")
+        if numeric["length"] <= 0:
+            raise ValueError("length는 0보다 커야 합니다.")
+        if numeric["width"] <= 0:
+            raise ValueError("width는 0보다 커야 합니다.")
+        if numeric["thickness"] <= 0:
+            raise ValueError("thickness는 0보다 커야 합니다.")
+        if numeric["width"] >= numeric["length"] / 2:
+            raise ValueError("width는 length의 절반보다 작아야 ㅁ자 빈 공간이 생깁니다.")
         if numeric["fmax"] <= numeric["fmin"]:
             raise ValueError("fmax는 fmin보다 커야 합니다.")
         return values
@@ -364,7 +358,7 @@ class CSTVibeGUI:
     def build_wizard_plan(self) -> dict:
         values = self.validate_wizard_values()
         commands: list[dict] = [
-            {"op": "units", "geometry": "mm", "frequency": "GHz", "time": "ns"},
+            {"op": "units", "geometry": "um", "frequency": "GHz", "time": "ns"},
             {"op": "frequency_range", "fmin": "fmin", "fmax": "fmax"},
         ]
         if self.include_boundary.get():
@@ -382,37 +376,48 @@ class CSTVibeGUI:
         commands.extend(
             [
                 {
-                    "op": "material",
-                    "name": "FR4_local",
-                    "epsilon": "epsilon",
-                    "mue": "1.0",
-                    "tand": "tand",
-                    "color": [0.1, 0.55, 0.25],
-                },
-                {
                     "op": "brick",
-                    "name": "substrate",
-                    "component": "unitcell",
-                    "material": "FR4_local",
-                    "xrange": ["-p/2", "p/2"],
-                    "yrange": ["-p/2", "p/2"],
-                    "zrange": ["0", "sub_t"],
-                },
-                {
-                    "op": "brick",
-                    "name": "top_patch",
+                    "name": "thread_top_x",
                     "component": "unitcell",
                     "material": "Copper (annealed)",
-                    "xrange": ["-patch_w/2", "patch_w/2"],
-                    "yrange": ["-patch_w/2", "patch_w/2"],
-                    "zrange": ["sub_t", "sub_t+copper_t"],
+                    "xrange": ["0", "length"],
+                    "yrange": ["-width", "0"],
+                    "zrange": ["0", "thickness"],
+                },
+                {
+                    "op": "brick",
+                    "name": "thread_left_y",
+                    "component": "unitcell",
+                    "material": "Copper (annealed)",
+                    "xrange": ["0", "width"],
+                    "yrange": ["-length", "0"],
+                    "zrange": ["0", "thickness"],
+                },
+                {
+                    "op": "brick",
+                    "name": "thread_bottom_x",
+                    "component": "unitcell",
+                    "material": "Copper (annealed)",
+                    "xrange": ["0", "length"],
+                    "yrange": ["-length", "-length+width"],
+                    "zrange": ["0", "thickness"],
+                },
+                {
+                    "op": "brick",
+                    "name": "thread_right_y",
+                    "component": "unitcell",
+                    "material": "Copper (annealed)",
+                    "xrange": ["length-width", "length"],
+                    "yrange": ["-length", "0"],
+                    "zrange": ["0", "thickness"],
                 },
                 {"op": "rebuild"},
                 {"op": "save"},
             ]
         )
         return {
-            "project": {"mode": "new", "save_as": "output/generated_patch_unitcell.cst"},
+            "design_id": "mesh_frame_unitcell",
+            "project": {"mode": "new", "save_as": "output/generated_mesh_frame_unitcell.cst"},
             "parameters": values,
             "commands": commands,
         }
@@ -482,18 +487,19 @@ class CSTVibeGUI:
             except Exception:
                 return None
 
-        p = as_float("p")
-        patch_w = as_float("patch_w")
-        sub_t = as_float("sub_t")
-        copper_t = as_float("copper_t")
+        length = as_float("length")
+        width = as_float("width")
+        thickness = as_float("thickness")
         fmin = as_float("fmin")
         fmax = as_float("fmax")
-        if p is not None and patch_w is not None and patch_w >= p:
-            messages.append("[error] patch_w must be smaller than p.")
-        if sub_t is not None and sub_t <= 0:
-            messages.append("[error] sub_t must be positive.")
-        if copper_t is not None and copper_t <= 0:
-            messages.append("[error] copper_t must be positive.")
+        if length is not None and length <= 0:
+            messages.append("[error] length must be positive.")
+        if width is not None and width <= 0:
+            messages.append("[error] width must be positive.")
+        if thickness is not None and thickness <= 0:
+            messages.append("[error] thickness must be positive.")
+        if length is not None and width is not None and width >= length / 2:
+            messages.append("[error] width must be smaller than length/2.")
         if fmin is not None and fmax is not None and fmax <= fmin:
             messages.append("[error] fmax must be greater than fmin.")
 

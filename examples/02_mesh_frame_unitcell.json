@@ -1,0 +1,69 @@
+{
+  "design_id": "mesh_frame_unitcell",
+  "project": {
+    "mode": "new",
+    "save_as": "output/mesh_frame_unitcell.cst"
+  },
+  "parameters": {
+    "length": "100",
+    "width": "10",
+    "thickness": "2",
+    "fmin": "1",
+    "fmax": "18"
+  },
+  "commands": [
+    {
+      "op": "units",
+      "geometry": "um",
+      "frequency": "GHz",
+      "time": "ns"
+    },
+    {
+      "op": "frequency_range",
+      "fmin": "fmin",
+      "fmax": "fmax"
+    },
+    {
+      "op": "brick",
+      "name": "thread_top_x",
+      "component": "unitcell",
+      "material": "Copper (annealed)",
+      "xrange": ["0", "length"],
+      "yrange": ["-width", "0"],
+      "zrange": ["0", "thickness"]
+    },
+    {
+      "op": "brick",
+      "name": "thread_left_y",
+      "component": "unitcell",
+      "material": "Copper (annealed)",
+      "xrange": ["0", "width"],
+      "yrange": ["-length", "0"],
+      "zrange": ["0", "thickness"]
+    },
+    {
+      "op": "brick",
+      "name": "thread_bottom_x",
+      "component": "unitcell",
+      "material": "Copper (annealed)",
+      "xrange": ["0", "length"],
+      "yrange": ["-length", "-length+width"],
+      "zrange": ["0", "thickness"]
+    },
+    {
+      "op": "brick",
+      "name": "thread_right_y",
+      "component": "unitcell",
+      "material": "Copper (annealed)",
+      "xrange": ["length-width", "length"],
+      "yrange": ["-length", "0"],
+      "zrange": ["0", "thickness"]
+    },
+    {
+      "op": "rebuild"
+    },
+    {
+      "op": "save"
+    }
+  ]
+}

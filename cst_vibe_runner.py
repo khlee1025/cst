@@ -211,10 +211,10 @@ def make_run_dir(args: argparse.Namespace, plan: dict[str, Any]) -> Path | None:
         return None
 
     parameters = plan.get("parameters", {})
-    design_id = plan.get("design_id") or plan.get("name") or "patch_unitcell"
+    design_id = plan.get("design_id") or plan.get("name") or "mesh_unitcell"
     if isinstance(parameters, dict):
         suffix_parts = []
-        for key in ("p", "sub_t", "patch_w"):
+        for key in ("length", "width", "thickness", "p", "sub_t", "patch_w"):
             if key in parameters:
                 suffix_parts.append(f"{key}{parameters[key]}")
         if suffix_parts:
