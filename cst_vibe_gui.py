@@ -13,6 +13,8 @@ from __future__ import annotations
 import json
 import os
 import queue
+import copy
+import re
 import subprocess
 import sys
 import threading
@@ -70,6 +72,8 @@ class CSTVibeGUI:
             "fmax": StringVar(value="18"),
         }
         self.include_boundary = BooleanVar(value=False)
+        self.sweep_parameter = StringVar(value="width")
+        self.sweep_values = StringVar(value="5, 10, 15")
 
         self.llm_api_key = StringVar(value=os.getenv("LLM_API_KEY", ""))
         self.llm_base_url = StringVar(value=os.getenv("LLM_BASE_URL", "http://10.240.246.158:8000/v1"))
@@ -186,6 +190,7 @@ class CSTVibeGUI:
             ("대사 -> JSON 만들기", self.convert_request_with_llm, "Accent.TButton"),
             ("기본 유닛셀 값 입력", self.open_wizard, "TButton"),
             ("실행 전 확인", self.preflight_check, "TButton"),
+            ("파라미터 스윕", self.open_sweep_dialog, "TButton"),
             ("CST 2025 연결 테스트", self.run_connection_test, "TButton"),
             ("CST 실행 + 결과폴더", self.run_rf_package_cst, "Accent.TButton"),
             ("문제 진단", self.run_diagnostics, "TButton"),
@@ -333,6 +338,148 @@ class CSTVibeGUI:
         if self.apply_wizard_plan():
             win.destroy()
             self.notebook.select(1)
+
+    def open_sweep_dialog(self) -> None:
+        win = Toplevel(self.root)
+        win.title("파라미터 스윕")
+        win.geometry("520x310")
+        win.transient(self.root)
+        win.grab_set()
+        frm = ttk.Frame(win, padding=16)
+        frm.pack(fill=BOTH, expand=True)
+        frm.columnconfigure(1, weight=1)
+
+        ttk.Label(frm, text="스윕 파라미터").grid(row=0, column=0, sticky="w", pady=5)
+        param_box = ttk.Combobox(
+            frm,
+            textvariable=self.sweep_parameter,
+            values=("width", "length", "thickness", "fmin", "fmax"),
+        )
+        param_box.grid(row=0, column=1, sticky="ew", pady=5)
+
+        ttk.Label(frm, text="값 목록").grid(row=1, column=0, sticky="w", pady=5)
+        ttk.Entry(frm, textvariable=self.sweep_values).grid(row=1, column=1, sticky="ew", pady=5)
+
+        ttk.Label(
+            frm,
+            text="쉼표 또는 공백으로 구분하세요. 예: 5, 10, 15",
+            foreground=self.colors["muted"],
+        ).grid(row=2, column=0, columnspan=2, sticky="w", pady=(0, 12))
+
+        ttk.Button(
+            frm,
+            text="스윕 드라이런",
+            command=lambda: self.start_sweep_from_dialog(win, dry_run=True),
+        ).grid(row=3, column=0, columnspan=2, sticky="ew", pady=4)
+        ttk.Button(
+            frm,
+            text="스윕 실행 + 결과폴더",
+            style="Accent.TButton",
+            command=lambda: self.start_sweep_from_dialog(win, dry_run=False),
+        ).grid(row=4, column=0, columnspan=2, sticky="ew", pady=4)
+
+        ttk.Label(
+            frm,
+            text="각 값마다 JSON을 새로 만들고 runs 폴더를 따로 생성합니다.",
+            foreground=self.colors["muted"],
+        ).grid(row=5, column=0, columnspan=2, sticky="w", pady=(12, 0))
+
+    def parse_sweep_values(self) -> list[str]:
+        raw = self.sweep_values.get().strip()
+        values = [item for item in re.split(r"[\s,]+", raw) if item]
+        if not values:
+            raise ValueError("스윕 값 목록이 비어 있습니다.")
+        for value in values:
+            float(value)
+        return values
+
+    def start_sweep_from_dialog(self, win: Toplevel, dry_run: bool) -> None:
+        if self.start_sweep(dry_run=dry_run):
+            win.destroy()
+
+    def start_sweep(self, dry_run: bool) -> bool:
+        if self.running:
+            messagebox.showinfo("실행 중", "이미 실행 중입니다.")
+            return False
+        if not self.sync_wizard_parameters_if_needed():
+            return False
+        try:
+            base_plan = self.current_plan()
+            parameter = self.sweep_parameter.get().strip()
+            values = self.parse_sweep_values()
+            commands = self.build_sweep_commands(base_plan, parameter, values, dry_run=dry_run)
+        except Exception as exc:
+            messagebox.showerror("스윕 준비 실패", str(exc))
+            return False
+        if not commands:
+            messagebox.showerror("스윕 준비 실패", "실행할 스윕 값이 없습니다.")
+            return False
+
+        self.running = True
+        self.clear_output()
+        self.notebook.select(0)
+        mode = "스윕 드라이런" if dry_run else "스윕 실행 + 결과폴더"
+        self.status.set(f"{mode} 중...")
+        self.append_output(f"[sweep] parameter={parameter}, values={', '.join(values)}\n\n")
+        threading.Thread(target=self.sweep_worker, args=(commands, mode), daemon=True).start()
+        self.root.after(80, self.drain_output_queue)
+        return True
+
+    def build_sweep_commands(self, base_plan: dict, parameter: str, values: list[str], dry_run: bool) -> list[list[str]]:
+        if not parameter:
+            raise ValueError("스윕 파라미터 이름이 비어 있습니다.")
+        params = base_plan.get("parameters")
+        if not isinstance(params, dict):
+            raise ValueError("parameters는 object여야 합니다.")
+        if parameter not in params:
+            raise ValueError(f"현재 JSON parameters에 '{parameter}'가 없습니다.")
+
+        commands: list[list[str]] = []
+        for index, value in enumerate(values, start=1):
+            plan = copy.deepcopy(base_plan)
+            plan_params = plan.setdefault("parameters", {})
+            if not isinstance(plan_params, dict):
+                raise ValueError("parameters는 object여야 합니다.")
+            plan_params[parameter] = value
+
+            base_id = str(plan.get("design_id") or plan.get("name") or "mesh_frame_unitcell")
+            value_slug = self.safe_slug(value)
+            plan["design_id"] = f"{base_id}_{parameter}{value_slug}"
+            project = plan.setdefault("project", {"mode": "new"})
+            if not isinstance(project, dict):
+                raise ValueError("project는 object여야 합니다.")
+            project["save_as"] = f"output/{plan['design_id']}.cst"
+
+            plan_path = APP_DIR / f".cst_vibe_gui_sweep_{index:03d}_{self.safe_slug(parameter)}_{value_slug}.json"
+            plan_path.write_text(json.dumps(plan, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            cmd = [sys.executable, str(RUNNER), str(plan_path), "--prog-id", self.prog_id.get().strip(), "--package-run"]
+            if dry_run:
+                cmd.append("--dry-run")
+            elif self.visible.get():
+                cmd.append("--visible")
+            cmd.append("--continue-on-error")
+            commands.append(cmd)
+        return commands
+
+    def sweep_worker(self, commands: list[list[str]], mode: str) -> None:
+        worst_code = 0
+        try:
+            for index, cmd in enumerate(commands, start=1):
+                self.output_queue.put(f"\n[sweep {index}/{len(commands)}]\n$ {' '.join(cmd)}\n\n")
+                code = self.run_subprocess_to_queue(cmd)
+                worst_code = max(worst_code, code)
+                self.output_queue.put(f"\n[sweep {index}/{len(commands)} 종료 코드: {code}]\n")
+        except Exception as exc:
+            worst_code = max(worst_code, 1)
+            self.output_queue.put(f"\n[스윕 실패] {exc}\n")
+        finally:
+            self.output_queue.put(f"\n[{mode} 전체 종료 코드: {worst_code}]\n")
+            self.output_queue.put(None)
+
+    def safe_slug(self, value: str) -> str:
+        text = str(value).strip().replace(".", "p").replace("-", "m")
+        text = re.sub(r"[^A-Za-z0-9_]+", "_", text).strip("_")
+        return text or "value"
 
     def wizard_values(self) -> dict[str, str]:
         return {key: var.get().strip() for key, var in self.wizard_vars.items()}
@@ -692,24 +839,27 @@ class CSTVibeGUI:
 
     def worker(self, cmd: list[str], mode: str) -> None:
         try:
-            proc = subprocess.Popen(
-                cmd,
-                cwd=str(APP_DIR),
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-            )
-            assert proc.stdout is not None
-            for line in proc.stdout:
-                self.output_queue.put(line)
-            code = proc.wait()
+            code = self.run_subprocess_to_queue(cmd)
             self.output_queue.put(f"\n[{mode} 종료 코드: {code}]\n")
         except Exception as exc:
             self.output_queue.put(f"\n[실행 실패] {exc}\n")
         finally:
             self.output_queue.put(None)
+
+    def run_subprocess_to_queue(self, cmd: list[str]) -> int:
+        proc = subprocess.Popen(
+            cmd,
+            cwd=str(APP_DIR),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+        assert proc.stdout is not None
+        for line in proc.stdout:
+            self.output_queue.put(line)
+        return proc.wait()
 
     def drain_output_queue(self) -> None:
         finished = False
