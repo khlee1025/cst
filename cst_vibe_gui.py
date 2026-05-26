@@ -341,9 +341,10 @@ class CSTVibeGUI:
             self.notebook.select(1)
 
     def open_sweep_dialog(self) -> None:
+        self.seed_sweep_defaults()
         win = Toplevel(self.root)
         win.title("파라미터 스윕")
-        win.geometry("520x310")
+        win.geometry("560x430")
         win.transient(self.root)
         win.grab_set()
         frm = ttk.Frame(win, padding=16)
@@ -355,7 +356,9 @@ class CSTVibeGUI:
             frm,
             textvariable=self.sweep_parameter,
             values=("width", "length", "thickness", "fmin", "fmax"),
+            state="readonly",
         )
+        param_box.set(self.sweep_parameter.get() or "width")
         param_box.grid(row=0, column=1, sticky="ew", pady=5)
 
         ttk.Label(frm, text="값 목록").grid(row=1, column=0, sticky="w", pady=5)
@@ -367,23 +370,76 @@ class CSTVibeGUI:
             foreground=self.colors["muted"],
         ).grid(row=2, column=0, columnspan=2, sticky="w", pady=(0, 12))
 
+        preview = ScrolledText(frm, height=7, wrap="word", font=("Malgun Gothic", 9), bg="#f8fafc", bd=0)
+        preview.grid(row=3, column=0, columnspan=2, sticky="nsew", pady=(0, 10))
+        frm.rowconfigure(3, weight=1)
+
+        def refresh_preview() -> None:
+            preview.delete("1.0", END)
+            try:
+                parameter = self.sweep_parameter.get().strip()
+                values = self.parse_sweep_values()
+                plan = self.current_plan()
+                params = plan.get("parameters", {}) if isinstance(plan, dict) else {}
+                current = params.get(parameter, "없음") if isinstance(params, dict) else "없음"
+                lines = [
+                    f"현재 {parameter} = {current}",
+                    f"생성될 케이스: {len(values)}개",
+                    "",
+                ]
+                for value in values:
+                    lines.append(f"- {parameter} = {value}")
+                lines.extend(["", "드라이런: runs 폴더를 만들지 않습니다.", "실행 + 결과폴더: 값마다 runs 폴더를 만듭니다."])
+                preview.insert("1.0", "\n".join(lines))
+            except Exception as exc:
+                preview.insert("1.0", f"미리보기 오류: {exc}")
+
+        ttk.Button(frm, text="미리보기 갱신", command=refresh_preview).grid(
+            row=4, column=0, columnspan=2, sticky="ew", pady=(0, 6)
+        )
+
         ttk.Button(
             frm,
             text="스윕 드라이런",
             command=lambda: self.start_sweep_from_dialog(win, dry_run=True),
-        ).grid(row=3, column=0, columnspan=2, sticky="ew", pady=4)
+        ).grid(row=5, column=0, columnspan=2, sticky="ew", pady=4)
         ttk.Button(
             frm,
             text="스윕 실행 + 결과폴더",
             style="Accent.TButton",
             command=lambda: self.start_sweep_from_dialog(win, dry_run=False),
-        ).grid(row=4, column=0, columnspan=2, sticky="ew", pady=4)
+        ).grid(row=6, column=0, columnspan=2, sticky="ew", pady=4)
 
         ttk.Label(
             frm,
             text="각 값마다 JSON을 새로 만들고 runs 폴더를 따로 생성합니다.",
             foreground=self.colors["muted"],
-        ).grid(row=5, column=0, columnspan=2, sticky="w", pady=(12, 0))
+        ).grid(row=7, column=0, columnspan=2, sticky="w", pady=(12, 0))
+        refresh_preview()
+
+    def seed_sweep_defaults(self) -> None:
+        try:
+            plan = self.current_plan()
+            params = plan.get("parameters", {}) if isinstance(plan, dict) else {}
+        except Exception:
+            params = {}
+        if isinstance(params, dict):
+            for key in ("width", "length", "thickness", "fmin", "fmax"):
+                if key in params:
+                    self.sweep_parameter.set(key)
+                    break
+            current = params.get(self.sweep_parameter.get())
+            if current is not None:
+                try:
+                    number = float(current)
+                    if self.sweep_parameter.get() == "width":
+                        values = [max(number * 0.5, 0.001), number, number * 1.5]
+                    else:
+                        values = [number * 0.8, number, number * 1.2]
+                    self.sweep_values.set(", ".join(f"{value:.12g}" for value in values))
+                except Exception:
+                    if not self.sweep_values.get().strip():
+                        self.sweep_values.set("5, 10, 15")
 
     def parse_sweep_values(self) -> list[str]:
         raw = self.sweep_values.get().strip()
@@ -457,7 +513,9 @@ class CSTVibeGUI:
                 f"sweep_{index:03d}_{self.safe_slug(parameter)}_{value_slug}",
             )
             cleanup_files.append(plan_path)
-            cmd = [sys.executable, str(RUNNER), str(plan_path), "--prog-id", self.prog_id.get().strip(), "--package-run"]
+            cmd = [sys.executable, str(RUNNER), str(plan_path), "--prog-id", self.prog_id.get().strip()]
+            if not dry_run:
+                cmd.append("--package-run")
             if dry_run:
                 cmd.append("--dry-run")
             elif self.visible.get():
