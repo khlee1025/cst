@@ -231,6 +231,32 @@ CST 버전마다 매크로 이름이나 옵션이 조금 다를 수 있습니다
 `CST 실행`에서 종료코드 1 또는 2가 나오면 출력창의 `CST AddToHistory failed` 아래를 확인합니다.
 거기에 CST가 거절한 `History name`과 `Macro code`가 표시됩니다. 그 블록이 수정해야 할 부분입니다.
 
+### CST 2025에서 AddToHistory 인자 오류가 날 때
+
+예를 들어 이런 오류가 나올 수 있습니다.
+
+```text
+This method call requires a different number of arguments: 2 required, 0 provided
+```
+
+이 경우는 두 가지 가능성이 있습니다.
+
+1. CST가 매크로 코드 안의 어떤 메서드를 잘못 해석한 경우
+2. CST 2025 COM이 `AddToHistory(name, code)` 인자 전달을 pywin32 기본 방식으로 받지 못한 경우
+
+현재 버전은 기본 호출이 실패하면 raw COM `Invoke` 방식으로 한 번 더 시도합니다.
+그래도 실패하면 출력창에 아래 정보가 나옵니다.
+
+```text
+normal call failed:
+raw COM Invoke failed:
+name='...'
+code_length=...
+```
+
+이 정보가 보이면 `name`이 비어있는지, `code_length`가 0인지 먼저 확인합니다.
+둘 다 정상인데도 실패하면 CST 버전의 COM 호출 방식 또는 매크로 문법 문제일 가능성이 큽니다.
+
 ## 9. 추천 사용 순서
 
 처음에는 아래 순서로 확인하는 것을 추천합니다.

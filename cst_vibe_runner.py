@@ -130,8 +130,9 @@ class CSTSession:
             return
         self._require_mws()
         print(f"[cst] AddToHistory: {name_text}")
+        print(f"[cst] AddToHistory args: name_length={len(name_text)}, code_length={len(code_text)}")
         try:
-            self.mws.AddToHistory(name_text, code_text)
+            self._add_to_history(name_text, code_text)
         except Exception as exc:
             raise PlanError(
                 "CST AddToHistory failed. CST is connected, but it rejected this "
@@ -140,6 +141,39 @@ class CSTSession:
                 f"Macro code:\n{code_text}\n\n"
                 f"Original error:\n{exc}"
             ) from exc
+
+    def _add_to_history(self, name: str, code: str) -> None:
+        errors: list[str] = []
+
+        try:
+            self.mws.AddToHistory(name, code)
+            return
+        except Exception as exc:
+            errors.append(f"normal call failed: {exc}")
+
+        try:
+            import pythoncom  # type: ignore
+
+            dispid = self.mws._oleobj_.GetIDsOfNames("AddToHistory")
+            self.mws._oleobj_.Invoke(
+                dispid,
+                0,
+                pythoncom.DISPATCH_METHOD,
+                False,
+                name,
+                code,
+            )
+            return
+        except Exception as exc:
+            errors.append(f"raw COM Invoke failed: {exc}")
+
+        joined = "\n".join(errors)
+        raise PlanError(
+            "AddToHistory could not be called with either pywin32 dispatch style.\n"
+            "This usually means CST 2025 is receiving the method call with the "
+            "wrong argument binding, even though the Python strings are not empty.\n"
+            f"name={name!r}, code_length={len(code)}\n{joined}"
+        )
 
     def store_parameter(self, name: str, value: Any) -> None:
         if self.dry_run:
