@@ -198,7 +198,7 @@ class CSTVibeGUI:
             ("1. 대사 적용", self.apply_request_to_wizard, "Accent.TButton"),
             ("2. 실행 전 확인", self.preflight_check, "TButton"),
             ("3. CST 실행 + 결과폴더", self.run_rf_package_cst, "Accent.TButton"),
-            ("파라미터 스윕", self.open_sweep_dialog, "TButton"),
+            ("배치 스윕", self.open_sweep_dialog, "TButton"),
             ("CST 2025 연결 테스트", self.run_connection_test, "TButton"),
             ("문제 진단", self.run_diagnostics, "TButton"),
         ]
@@ -403,7 +403,7 @@ class CSTVibeGUI:
     def open_sweep_dialog(self) -> None:
         self.seed_sweep_defaults()
         win = Toplevel(self.root)
-        win.title("파라미터 스윕")
+        win.title("배치 스윕")
         win.geometry("620x600")
         win.transient(self.root)
         win.grab_set()
@@ -462,7 +462,12 @@ class CSTVibeGUI:
                     lines.append("- " + ", ".join(f"{key}={value}" for key, value in case.items()))
                 if len(cases) > 30:
                     lines.append(f"... 외 {len(cases) - 30}개")
-                lines.extend(["", "드라이런: runs 폴더를 만들지 않습니다.", "실행 + 결과폴더: 값마다 runs 폴더를 만듭니다."])
+                lines.extend([
+                    "",
+                    "이 기능은 CST 내부 Parametric Sweep이 아닙니다.",
+                    "드라이런: runs 폴더를 만들지 않습니다.",
+                    "실행 + 결과폴더: 값마다 runs 폴더를 만듭니다.",
+                ])
                 preview.insert("1.0", "\n".join(lines))
             except Exception as exc:
                 preview.insert("1.0", f"미리보기 오류: {exc}")
@@ -473,19 +478,19 @@ class CSTVibeGUI:
 
         ttk.Button(
             frm,
-            text="스윕 드라이런",
+            text="배치 스윕 드라이런",
             command=lambda: self.start_sweep_from_dialog(win, dry_run=True, matrix_text=matrix_text.get("1.0", "end-1c")),
         ).grid(row=7, column=0, columnspan=2, sticky="ew", pady=4)
         ttk.Button(
             frm,
-            text="스윕 실행 + 결과폴더",
+            text="배치 스윕 실행 + 결과폴더",
             style="Accent.TButton",
             command=lambda: self.start_sweep_from_dialog(win, dry_run=False, matrix_text=matrix_text.get("1.0", "end-1c")),
         ).grid(row=8, column=0, columnspan=2, sticky="ew", pady=4)
 
         ttk.Label(
             frm,
-            text="각 값마다 JSON을 새로 만들고 runs 폴더를 따로 생성합니다.",
+            text="CST 내부 스윕이 아니라, 각 값마다 JSON을 새로 만들어 순차 실행합니다.",
             foreground=self.colors["muted"],
         ).grid(row=9, column=0, columnspan=2, sticky="w", pady=(12, 0))
         refresh_preview()
@@ -581,7 +586,7 @@ class CSTVibeGUI:
         self.running = True
         self.clear_output()
         self.notebook.select(0)
-        mode = "스윕 드라이런" if dry_run else "스윕 실행 + 결과폴더"
+        mode = "배치 스윕 드라이런" if dry_run else "배치 스윕 실행 + 결과폴더"
         self.status.set(f"{mode} 중...")
         self.append_output(f"[sweep] mode={parameter}, cases={len(cases)}\n")
         for case in cases[:30]:
