@@ -962,6 +962,8 @@ class CSTVibeGUI:
         ops = [item.get("op") for item in commands if isinstance(item, dict)]
         if "discrete_port" in ops:
             messages.append("[warn] discrete_port가 있습니다. 포트 위치를 CST에서 확인하세요.")
+        if "discrete_port" not in ops:
+            messages.append("[warn] 현재 JSON에는 S-parameter용 포트/Floquet 설정이 없습니다. CST가 S11/S21을 만들지 못할 수 있습니다.")
         if "solver_start" in ops:
             messages.append("[warn] solver_start가 있습니다. 형상 확인 후 실행하는 것을 권장합니다.")
         messages.append(f"[info] command_count={len(commands)}, brick_count={ops.count('brick')}")
@@ -1109,6 +1111,7 @@ class CSTVibeGUI:
         self.after_run_action = "collect_results"
         self.append_output("[flow] CST에서 형상을 만들고 기본 Frequency Solver Start를 실행합니다.\n")
         self.append_output(f"[flow] 해석 후 S-parameter export: {export_path}\n\n")
+        self.append_output("[note] S11/S21이 안 보이면 CST에 포트/Floquet 설정이 없어서 s2p가 생성되지 않은 경우가 많습니다.\n\n")
         self.run_plan(
             False,
             plan_text=json.dumps(plan, ensure_ascii=False, indent=2) + "\n",
@@ -1131,18 +1134,31 @@ class CSTVibeGUI:
 
     def collect_and_show_results(self, root: Path) -> None:
         try:
+            candidate_files = self.find_result_candidates(root)
             rows = collect_sparams.collect(root)
             output = root / "s11_s21_summary.csv"
             collect_sparams.write_summary(output, rows)
         except Exception as exc:
             messagebox.showerror("S11/S21 정리 실패", str(exc))
             return
-        self.show_result_rows(rows, output)
+        self.show_result_rows(rows, output, root, candidate_files)
         self.append_output(f"[collect] rows={len(rows)}\n")
         self.append_output(f"[collect] output={output}\n\n")
+        if not rows:
+            self.append_output("[collect] S11/S21 데이터가 없습니다. 결과 탭의 안내를 확인하세요.\n\n")
         self.status.set(f"S11/S21 정리 완료: {len(rows)} rows")
 
-    def show_result_rows(self, rows: list[dict[str, str]], output: Path) -> None:
+    def find_result_candidates(self, root: Path) -> list[Path]:
+        if not root.exists():
+            return []
+        suffixes = {".s2p", ".csv", ".txt"}
+        return [
+            path
+            for path in sorted(root.rglob("*"))
+            if path.is_file() and path.suffix.lower() in suffixes and path.name.lower() != "s11_s21_summary.csv"
+        ]
+
+    def show_result_rows(self, rows: list[dict[str, str]], output: Path, root: Path, candidate_files: list[Path]) -> None:
         self.result_text.delete("1.0", END)
         lines = [f"summary: {output}", f"rows: {len(rows)}", ""]
         numeric_rows = []
@@ -1174,7 +1190,32 @@ class CSTVibeGUI:
             if len(rows) > 300:
                 lines.append(f"... 외 {len(rows) - 300} rows")
         else:
-            lines.append("S11/S21 데이터를 찾지 못했습니다. CST export 폴더에 .s2p 또는 S11/S21 컬럼이 있는 CSV를 넣고 다시 불러오세요.")
+            expected = root / "exports" / "sparameters.s2p"
+            lines.extend(
+                [
+                    "S11/S21 데이터를 찾지 못했습니다.",
+                    "",
+                    "확인할 것:",
+                    f"- 자동 export 예상 파일: {expected}",
+                    f"- 파일 존재 여부: {'있음' if expected.exists() else '없음'}",
+                    f"- 읽을 수 있는 후보 파일 수: {len(candidate_files)}",
+                    "",
+                    "가능성이 큰 원인:",
+                    "- CST solver가 끝나기 전에 export가 시도됐거나 solver가 실패했습니다.",
+                    "- 현재 기본 유닛셀은 형상과 unit cell 경계조건 중심이라 S-parameter용 포트/Floquet 모드가 아직 없을 수 있습니다.",
+                    "- S11/S21은 포트 또는 Floquet 모드가 있어야 CST가 계산/export할 수 있습니다.",
+                    "",
+                    "지금 할 수 있는 확인:",
+                    "- CST 화면에서 해석 결과 트리에 S-Parameters가 생겼는지 확인",
+                    "- CST에서 Touchstone .s2p를 직접 export한 뒤 `결과 불러오기`로 그 폴더 선택",
+                ]
+            )
+            if candidate_files:
+                lines.extend(["", "발견된 후보 파일:"])
+                for path in candidate_files[:20]:
+                    lines.append(f"- {path}")
+                if len(candidate_files) > 20:
+                    lines.append(f"... 외 {len(candidate_files) - 20}개")
         self.result_text.insert("1.0", "\n".join(lines) + "\n")
         self.notebook.select(self.result_tab)
 

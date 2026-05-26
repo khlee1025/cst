@@ -130,6 +130,8 @@ CST를 열지 않고 검증합니다.
 
 해석이 끝나면 `exports/sparameters.s2p`로 export하고, 오른쪽 `S11/S21 결과` 탭에 요약을 보여줍니다.
 
+주의: S11/S21은 CST 안에 포트 또는 Floquet 모드가 있어야 생성됩니다. 결과 탭에 데이터가 없다고 나오면 CST 결과 트리에 S-Parameters가 생겼는지 먼저 확인하세요.
+
 ```text
 runs/날짜_시간_mesh_frame_unitcell/
   cst_project.cst
