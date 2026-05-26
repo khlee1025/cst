@@ -172,6 +172,26 @@ CST COM 연결을 실제로 확인합니다. CST가 설치된 PC에서만 의미
 
 형상이 뜨면 CST 안에서 `Setup Solver`의 `Start`를 눌러 해석합니다. solver 조건은 CST 화면에서 확인하고 시작하는 흐름을 기본으로 둡니다.
 
+### S11/S21 정리
+
+CST에서 solver를 돌린 뒤 export한 `.s2p`, `.csv`, `.txt` 결과에서 S11/S21만 모읍니다.
+
+사용 순서:
+
+```text
+1. S11/S21 정리 클릭
+2. 결과 파일이 있는 폴더 선택
+3. s11_s21_summary.csv 확인
+```
+
+생성되는 컬럼:
+
+```text
+source, freq_ghz, s11_db, s21_db, note
+```
+
+Touchstone `.s2p`는 `MA`, `DB`, `RI` 형식을 읽어서 dB로 정리합니다.
+
 ### 배치 스윕
 
 `width`, `length`, `thickness`, `fmin`, `fmax` 중 하나를 골라 반복 실행하거나, 전체 변수 조합을 한 번에 돌립니다.

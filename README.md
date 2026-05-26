@@ -204,6 +204,22 @@ runs/
 
 그 다음 해석은 CST 안에서 `Setup Solver`의 `Start`를 눌러 진행합니다. 사용자가 CST에서 solver 조건을 눈으로 확인하고 시작하는 흐름을 기본으로 둡니다.
 
+### S11/S21 정리
+
+CST에서 solver를 돌린 뒤 export한 `.s2p` 또는 CSV/TXT 결과를 한 번에 모읍니다.
+
+1. `S11/S21 정리` 클릭
+2. 결과 파일이 있는 폴더 선택
+3. 선택한 폴더에 `s11_s21_summary.csv` 생성
+
+출력 컬럼:
+
+```text
+source, freq_ghz, s11_db, s21_db, note
+```
+
+Touchstone `.s2p`는 `MA`, `DB`, `RI` 형식을 읽어서 dB로 정리합니다.
+
 ### 배치 스윕
 
 `width`, `length`, `thickness`, `fmin`, `fmax` 같은 값을 여러 번 바꿔가며 실행합니다. 단일 변수도 되고, 전체 변수 조합도 됩니다.

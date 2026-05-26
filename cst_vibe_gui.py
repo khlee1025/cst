@@ -29,6 +29,7 @@ from tkinter import ttk
 
 APP_DIR = Path(__file__).resolve().parent
 RUNNER = APP_DIR / "cst_vibe_runner.py"
+COLLECTOR = APP_DIR / "collect_sparams.py"
 EXAMPLE_PLAN = APP_DIR / "examples" / "02_mesh_frame_unitcell.json"
 PROMPT_FILE = APP_DIR / "prompt_for_local_llm.md"
 RUNTIME_TMP = Path(tempfile.gettempdir()) / "cst_vibe_runner"
@@ -216,7 +217,8 @@ class CSTVibeGUI:
         ttk.Button(utility, text="결과폴더 저장", command=self.run_rf_package_cst).grid(row=1, column=0, sticky="ew", padx=(0, 4), pady=(6, 0))
         ttk.Button(utility, text="배치 스윕", command=self.open_sweep_dialog).grid(row=1, column=1, sticky="ew", padx=4, pady=(6, 0))
         ttk.Button(utility, text="리포트 저장", command=self.save_output_report).grid(row=1, column=2, sticky="ew", padx=(4, 0), pady=(6, 0))
-        ttk.Button(utility, text="출력 복사", command=self.copy_output).grid(row=2, column=0, sticky="ew", padx=(0, 4), pady=(6, 0))
+        ttk.Button(utility, text="S11/S21 정리", command=self.collect_sparams_dialog).grid(row=2, column=0, sticky="ew", padx=(0, 4), pady=(6, 0))
+        ttk.Button(utility, text="출력 복사", command=self.copy_output).grid(row=2, column=1, sticky="ew", padx=4, pady=(6, 0))
 
     def build_result_panel(self, parent: ttk.Frame) -> None:
         top = ttk.Frame(parent, style="Panel.TFrame")
@@ -1079,6 +1081,27 @@ class CSTVibeGUI:
         self.append_output("[flow] CST에 형상만 만들고 저장은 건너뜁니다.\n")
         self.append_output("[flow] 형상이 뜨면 CST 안에서 Setup Solver의 Start를 눌러 해석하세요.\n\n")
         self.run_plan(False, mode_label="CST에 형상 만들기", extra_args=["--continue-on-error", "--no-project-save"])
+
+    def collect_sparams_dialog(self) -> None:
+        if self.running:
+            messagebox.showinfo("실행 중", "이미 실행 중입니다.")
+            return
+        folder = filedialog.askdirectory(
+            title="S11/S21 결과가 있는 폴더 선택",
+            initialdir=str(APP_DIR),
+        )
+        if not folder:
+            return
+        root = Path(folder)
+        output = root / "s11_s21_summary.csv"
+        cmd = [sys.executable, str(COLLECTOR), str(root), "--output", str(output)]
+        self.running = True
+        self.clear_output()
+        self.notebook.select(0)
+        self.status.set("S11/S21 정리 중...")
+        self.append_output(f"\n$ {' '.join(cmd)}\n\n")
+        threading.Thread(target=self.worker, args=(cmd, "S11/S21 정리", []), daemon=True).start()
+        self.root.after(80, self.drain_output_queue)
 
     def run_rf_package_cst(self) -> None:
         if not self.sync_wizard_parameters_if_needed():
