@@ -14,6 +14,7 @@ import json
 import os
 import queue
 import copy
+import datetime as dt
 import re
 import subprocess
 import sys
@@ -25,6 +26,8 @@ from tkinter import BOTH, END, LEFT, RIGHT, X, BooleanVar, StringVar, Tk, Toplev
 from tkinter import filedialog, messagebox
 from tkinter.scrolledtext import ScrolledText
 from tkinter import ttk
+
+import collect_sparams
 
 
 APP_DIR = Path(__file__).resolve().parent
@@ -88,6 +91,8 @@ class CSTVibeGUI:
         self.running = False
         self.output_queue: queue.Queue[str | None] = queue.Queue()
         self.after_run_action: str | None = None
+        self.pending_result_dir: Path | None = None
+        self.last_exit_code: int | None = None
 
         self.colors = {
             "bg": "#f5f7fb",
@@ -132,7 +137,7 @@ class CSTVibeGUI:
         ).pack(side=LEFT)
         ttk.Label(
             header,
-            text="CST 2025 CT / 대사 적용 -> 확인 -> 실행",
+            text="CST 2025 CT / 대사 적용 -> 확인 -> 해석 -> S11/S21",
             style="Header.TLabel",
             font=("Segoe UI", 10),
         ).pack(side=LEFT, padx=(16, 0))
@@ -199,9 +204,7 @@ class CSTVibeGUI:
         buttons = [
             ("1. 대사 적용", self.apply_request_to_wizard, "Accent.TButton"),
             ("2. 실행 전 확인", self.preflight_check, "TButton"),
-            ("3. CST에 형상 만들기", self.run_geometry_in_cst, "Accent.TButton"),
-            ("CST 2025 연결 테스트", self.run_connection_test, "TButton"),
-            ("문제 진단", self.run_diagnostics, "TButton"),
+            ("3. CST 해석 + 결과 보기", self.run_solve_and_collect, "Accent.TButton"),
         ]
         for row, (label, command, style) in enumerate(buttons):
             ttk.Button(actions, text=label, command=command, style=style).grid(
@@ -213,13 +216,8 @@ class CSTVibeGUI:
         for i in range(3):
             utility.columnconfigure(i, weight=1)
         ttk.Button(utility, text="숫자 직접 입력", command=self.open_wizard).grid(row=0, column=0, sticky="ew", padx=(0, 4))
-        ttk.Button(utility, text="JSON 보기", command=lambda: self.notebook.select(1)).grid(row=0, column=1, sticky="ew", padx=4)
-        ttk.Button(utility, text="대사 -> JSON", command=self.convert_request_with_llm).grid(row=0, column=2, sticky="ew", padx=(4, 0))
-        ttk.Button(utility, text="결과폴더 저장", command=self.run_rf_package_cst).grid(row=1, column=0, sticky="ew", padx=(0, 4), pady=(6, 0))
-        ttk.Button(utility, text="배치 스윕", command=self.open_sweep_dialog).grid(row=1, column=1, sticky="ew", padx=4, pady=(6, 0))
-        ttk.Button(utility, text="리포트 저장", command=self.save_output_report).grid(row=1, column=2, sticky="ew", padx=(4, 0), pady=(6, 0))
-        ttk.Button(utility, text="S11/S21 정리", command=self.collect_sparams_dialog).grid(row=2, column=0, sticky="ew", padx=(0, 4), pady=(6, 0))
-        ttk.Button(utility, text="출력 복사", command=self.copy_output).grid(row=2, column=1, sticky="ew", padx=4, pady=(6, 0))
+        ttk.Button(utility, text="스윕 설정", command=self.open_sweep_dialog).grid(row=0, column=1, sticky="ew", padx=4)
+        ttk.Button(utility, text="결과 불러오기", command=self.collect_sparams_dialog).grid(row=0, column=2, sticky="ew", padx=(4, 0))
 
     def build_result_panel(self, parent: ttk.Frame) -> None:
         top = ttk.Frame(parent, style="Panel.TFrame")
@@ -230,15 +228,19 @@ class CSTVibeGUI:
             style="Panel.TLabel",
             font=("Segoe UI Semibold", 13),
         ).pack(side=LEFT)
-        ttk.Button(top, text="예제 초기화", command=self.load_example_plan).pack(side=RIGHT, padx=(6, 0))
-        ttk.Button(top, text="JSON 정렬", command=self.format_json).pack(side=RIGHT)
-
         self.notebook = ttk.Notebook(parent)
         self.notebook.grid(row=1, column=0, sticky="nsew")
 
         output_tab = ttk.Frame(self.notebook, style="Panel.TFrame")
+        result_tab = ttk.Frame(self.notebook, style="Panel.TFrame")
+        sweep_tab = ttk.Frame(self.notebook, style="Panel.TFrame")
         json_tab = ttk.Frame(self.notebook, style="Panel.TFrame")
+        self.result_tab = result_tab
+        self.sweep_tab = sweep_tab
+        self.json_tab = json_tab
         self.notebook.add(output_tab, text="실행 출력")
+        self.notebook.add(result_tab, text="S11/S21 결과")
+        self.notebook.add(sweep_tab, text="스윕 설정")
         self.notebook.add(json_tab, text="JSON 명령서")
 
         self.output_text = ScrolledText(
@@ -255,6 +257,21 @@ class CSTVibeGUI:
         )
         self.output_text.pack(fill=BOTH, expand=True)
 
+        self.result_text = ScrolledText(
+            result_tab,
+            wrap="none",
+            bg="#fbfdff",
+            fg=self.colors["text"],
+            insertbackground=self.colors["accent"],
+            font=("Cascadia Mono", 10),
+            padx=12,
+            pady=12,
+            bd=0,
+            relief="flat",
+        )
+        self.result_text.pack(fill=BOTH, expand=True)
+        self.result_text.insert("1.0", "해석이 끝나면 S11/S21 요약이 여기에 표시됩니다.\n")
+
         self.plan_text = ScrolledText(
             json_tab,
             wrap="none",
@@ -270,6 +287,76 @@ class CSTVibeGUI:
         )
         self.plan_text.pack(fill=BOTH, expand=True)
 
+        self.build_sweep_tab(sweep_tab)
+
+    def build_sweep_tab(self, parent: ttk.Frame) -> None:
+        parent.columnconfigure(1, weight=1)
+        parent.rowconfigure(5, weight=1)
+
+        ttk.Label(parent, text="스윕 방식", style="Panel.TLabel").grid(row=0, column=0, sticky="w", padx=12, pady=(14, 6))
+        param_box = ttk.Combobox(
+            parent,
+            textvariable=self.sweep_parameter,
+            values=("width", "length", "thickness", "fmin", "fmax", SWEEP_ALL),
+            state="readonly",
+        )
+        param_box.grid(row=0, column=1, sticky="ew", padx=12, pady=(14, 6))
+
+        ttk.Label(parent, text="값 목록", style="Panel.TLabel").grid(row=1, column=0, sticky="w", padx=12, pady=6)
+        ttk.Entry(parent, textvariable=self.sweep_values).grid(row=1, column=1, sticky="ew", padx=12, pady=6)
+        ttk.Label(
+            parent,
+            text="단일 변수 스윕에 사용합니다. 예: 5, 10, 15",
+            style="Muted.TLabel",
+        ).grid(row=2, column=0, columnspan=2, sticky="w", padx=12, pady=(0, 8))
+
+        ttk.Label(parent, text="전체 변수 값표", style="Panel.TLabel").grid(row=3, column=0, sticky="nw", padx=12, pady=6)
+        self.sweep_matrix_text = ScrolledText(parent, height=6, wrap="word", font=("Cascadia Mono", 9), bg="#fbfdff", bd=0)
+        self.sweep_matrix_text.grid(row=3, column=1, sticky="nsew", padx=12, pady=6)
+        self.sweep_matrix_text.insert("1.0", self.default_sweep_matrix_text())
+
+        button_row = ttk.Frame(parent, style="Panel.TFrame")
+        button_row.grid(row=4, column=0, columnspan=2, sticky="ew", padx=12, pady=8)
+        button_row.columnconfigure(0, weight=1)
+        button_row.columnconfigure(1, weight=1)
+        ttk.Button(button_row, text="미리보기", command=self.refresh_sweep_preview).grid(row=0, column=0, sticky="ew", padx=(0, 4))
+        ttk.Button(
+            button_row,
+            text="스윕 실행 + 결과 보기",
+            style="Accent.TButton",
+            command=lambda: self.start_sweep(dry_run=False, matrix_text=self.sweep_matrix_text.get("1.0", "end-1c")),
+        ).grid(row=0, column=1, sticky="ew", padx=(4, 0))
+
+        self.sweep_preview_text = ScrolledText(parent, height=8, wrap="word", font=("Malgun Gothic", 9), bg="#f8fafc", bd=0)
+        self.sweep_preview_text.grid(row=5, column=0, columnspan=2, sticky="nsew", padx=12, pady=(0, 12))
+        self.refresh_sweep_preview()
+
+    def refresh_sweep_preview(self) -> None:
+        if not hasattr(self, "sweep_preview_text"):
+            return
+        self.sweep_preview_text.delete("1.0", END)
+        try:
+            parameter = self.sweep_parameter.get().strip()
+            plan = self.current_plan()
+            params = plan.get("parameters", {}) if isinstance(plan, dict) else {}
+            values = self.parse_sweep_values()
+            matrix_text = self.sweep_matrix_text.get("1.0", "end-1c") if hasattr(self, "sweep_matrix_text") else ""
+            cases = self.build_sweep_cases(plan, parameter, values, matrix_text)
+            current = params.get(parameter, "여러 변수") if isinstance(params, dict) else "없음"
+            lines = [
+                f"현재 {parameter} = {current}",
+                f"실행될 케이스: {len(cases)}개",
+                "각 케이스는 CST 해석 후 sparameters.s2p를 export하고, 마지막에 S11/S21을 한 표로 합칩니다.",
+                "",
+            ]
+            for case in cases[:30]:
+                lines.append("- " + ", ".join(f"{key}={value}" for key, value in case.items()))
+            if len(cases) > 30:
+                lines.append(f"... 외 {len(cases) - 30}개")
+            self.sweep_preview_text.insert("1.0", "\n".join(lines))
+        except Exception as exc:
+            self.sweep_preview_text.insert("1.0", f"미리보기 오류: {exc}")
+
     def load_example_plan(self) -> None:
         try:
             text = EXAMPLE_PLAN.read_text(encoding="utf-8")
@@ -284,6 +371,7 @@ class CSTVibeGUI:
         except Exception:
             pass
         self.update_param_summary()
+        self.refresh_sweep_preview()
         self.status.set("기본 모기장 유닛셀 예제를 불러왔습니다.")
 
     def open_settings(self) -> None:
@@ -318,7 +406,7 @@ class CSTVibeGUI:
 
     def open_wizard(self) -> None:
         win = Toplevel(self.root)
-        win.title("기본 유닛셀 값 입력")
+        win.title("숫자 직접 입력")
         win.geometry("460x430")
         win.transient(self.root)
         win.grab_set()
@@ -341,7 +429,7 @@ class CSTVibeGUI:
         )
         ttk.Label(
             frm,
-            text="기본값은 x/y unit cell, z open입니다. 포트와 solver는 만들지 않습니다.",
+            text="기본값은 x/y unit cell, z open입니다. 해석 버튼은 Frequency Solver Start와 Touchstone export까지 실행합니다.",
             foreground=self.colors["muted"],
         ).grid(row=len(labels) + 1, column=0, columnspan=2, sticky="w", pady=(4, 10))
 
@@ -369,7 +457,7 @@ class CSTVibeGUI:
             self.notebook.select(0)
             changed = ", ".join(f"{key}={value}" for key, value in found.items()) or "기본값 유지"
             self.append_output(f"[flow] 대사를 기본 유닛셀 값에 반영했습니다: {changed}\n")
-            self.append_output("[flow] 다음은 '2. 실행 전 확인' 또는 바로 '3. CST에 형상 만들기'를 누르면 됩니다.\n\n")
+            self.append_output("[flow] 다음은 '2. 실행 전 확인' 또는 바로 '3. CST 해석 + 결과 보기'를 누르면 됩니다.\n\n")
             self.status.set("대사 적용 완료")
 
     def extract_request_values(self, text: str) -> dict[str, str]:
@@ -406,98 +494,11 @@ class CSTVibeGUI:
 
     def open_sweep_dialog(self) -> None:
         self.seed_sweep_defaults()
-        win = Toplevel(self.root)
-        win.title("배치 스윕")
-        win.geometry("620x600")
-        win.transient(self.root)
-        win.grab_set()
-        frm = ttk.Frame(win, padding=16)
-        frm.pack(fill=BOTH, expand=True)
-        frm.columnconfigure(1, weight=1)
-
-        ttk.Label(frm, text="스윕 파라미터").grid(row=0, column=0, sticky="w", pady=5)
-        param_box = ttk.Combobox(
-            frm,
-            textvariable=self.sweep_parameter,
-            values=("width", "length", "thickness", "fmin", "fmax", SWEEP_ALL),
-            state="readonly",
-        )
-        param_box.set(self.sweep_parameter.get() or "width")
-        param_box.grid(row=0, column=1, sticky="ew", pady=5)
-
-        ttk.Label(frm, text="값 목록").grid(row=1, column=0, sticky="w", pady=5)
-        ttk.Entry(frm, textvariable=self.sweep_values).grid(row=1, column=1, sticky="ew", pady=5)
-
-        ttk.Label(
-            frm,
-            text="단일 변수일 때 사용합니다. 예: 5, 10, 15",
-            foreground=self.colors["muted"],
-        ).grid(row=2, column=0, columnspan=2, sticky="w", pady=(0, 12))
-
-        ttk.Label(frm, text="전체 변수 값표").grid(row=3, column=0, sticky="nw", pady=5)
-        matrix_text = ScrolledText(frm, height=7, wrap="word", font=("Cascadia Mono", 9), bg="#fbfdff", bd=0)
-        matrix_text.grid(row=3, column=1, sticky="nsew", pady=5)
-        matrix_text.insert("1.0", self.default_sweep_matrix_text())
-        ttk.Label(
-            frm,
-            text="전체 변수 조합 선택 시 사용합니다. 한 줄에 하나씩: width=5,10,15",
-            foreground=self.colors["muted"],
-        ).grid(row=4, column=0, columnspan=2, sticky="w", pady=(0, 8))
-
-        preview = ScrolledText(frm, height=7, wrap="word", font=("Malgun Gothic", 9), bg="#f8fafc", bd=0)
-        preview.grid(row=5, column=0, columnspan=2, sticky="nsew", pady=(0, 10))
-        frm.rowconfigure(5, weight=1)
-
-        def refresh_preview() -> None:
-            preview.delete("1.0", END)
-            try:
-                parameter = self.sweep_parameter.get().strip()
-                plan = self.current_plan()
-                params = plan.get("parameters", {}) if isinstance(plan, dict) else {}
-                values = self.parse_sweep_values()
-                cases = self.build_sweep_cases(plan, parameter, values, matrix_text.get("1.0", "end-1c"))
-                current = params.get(parameter, "여러 변수") if isinstance(params, dict) else "없음"
-                lines = [
-                    f"현재 {parameter} = {current}",
-                    f"생성될 케이스: {len(cases)}개",
-                    "",
-                ]
-                for case in cases[:30]:
-                    lines.append("- " + ", ".join(f"{key}={value}" for key, value in case.items()))
-                if len(cases) > 30:
-                    lines.append(f"... 외 {len(cases) - 30}개")
-                lines.extend([
-                    "",
-                    "이 기능은 CST 내부 Parametric Sweep이 아닙니다.",
-                    "드라이런: runs 폴더를 만들지 않습니다.",
-                    "실행 + 결과폴더: 값마다 runs 폴더를 만듭니다.",
-                ])
-                preview.insert("1.0", "\n".join(lines))
-            except Exception as exc:
-                preview.insert("1.0", f"미리보기 오류: {exc}")
-
-        ttk.Button(frm, text="미리보기 갱신", command=refresh_preview).grid(
-            row=6, column=0, columnspan=2, sticky="ew", pady=(0, 6)
-        )
-
-        ttk.Button(
-            frm,
-            text="배치 스윕 드라이런",
-            command=lambda: self.start_sweep_from_dialog(win, dry_run=True, matrix_text=matrix_text.get("1.0", "end-1c")),
-        ).grid(row=7, column=0, columnspan=2, sticky="ew", pady=4)
-        ttk.Button(
-            frm,
-            text="배치 스윕 실행 + 결과폴더",
-            style="Accent.TButton",
-            command=lambda: self.start_sweep_from_dialog(win, dry_run=False, matrix_text=matrix_text.get("1.0", "end-1c")),
-        ).grid(row=8, column=0, columnspan=2, sticky="ew", pady=4)
-
-        ttk.Label(
-            frm,
-            text="CST 내부 스윕이 아니라, 각 값마다 JSON을 새로 만들어 순차 실행합니다.",
-            foreground=self.colors["muted"],
-        ).grid(row=9, column=0, columnspan=2, sticky="w", pady=(12, 0))
-        refresh_preview()
+        if hasattr(self, "sweep_matrix_text"):
+            self.sweep_matrix_text.delete("1.0", END)
+            self.sweep_matrix_text.insert("1.0", self.default_sweep_matrix_text())
+        self.refresh_sweep_preview()
+        self.notebook.select(self.sweep_tab)
 
     def seed_sweep_defaults(self) -> None:
         try:
@@ -564,10 +565,6 @@ class CSTVibeGUI:
             float(value)
         return values
 
-    def start_sweep_from_dialog(self, win: Toplevel, dry_run: bool, matrix_text: str = "") -> None:
-        if self.start_sweep(dry_run=dry_run, matrix_text=matrix_text):
-            win.destroy()
-
     def start_sweep(self, dry_run: bool, matrix_text: str = "") -> bool:
         if self.running:
             messagebox.showinfo("실행 중", "이미 실행 중입니다.")
@@ -579,7 +576,8 @@ class CSTVibeGUI:
             parameter = self.sweep_parameter.get().strip()
             values = self.parse_sweep_values()
             cases = self.build_sweep_cases(base_plan, parameter, values, matrix_text)
-            commands, cleanup_files = self.build_sweep_commands(base_plan, cases, dry_run=dry_run)
+            sweep_root = self.make_run_dir(f"sweep_{parameter}")
+            commands, cleanup_files = self.build_sweep_commands(base_plan, cases, dry_run=dry_run, sweep_root=sweep_root)
         except Exception as exc:
             messagebox.showerror("스윕 준비 실패", str(exc))
             return False
@@ -588,11 +586,16 @@ class CSTVibeGUI:
             return False
 
         self.running = True
+        self.pending_result_dir = None if dry_run else sweep_root
+        self.after_run_action = None if dry_run else "collect_results"
+        self.last_exit_code = None
         self.clear_output()
         self.notebook.select(0)
-        mode = "배치 스윕 드라이런" if dry_run else "배치 스윕 실행 + 결과폴더"
+        mode = "스윕 드라이런" if dry_run else "스윕 실행 + 결과 보기"
         self.status.set(f"{mode} 중...")
         self.append_output(f"[sweep] mode={parameter}, cases={len(cases)}\n")
+        if not dry_run:
+            self.append_output(f"[sweep] result_root={sweep_root}\n")
         for case in cases[:30]:
             self.append_output("[sweep] " + ", ".join(f"{key}={value}" for key, value in case.items()) + "\n")
         if len(cases) > 30:
@@ -646,7 +649,13 @@ class CSTVibeGUI:
             raise ValueError(f"스윕 케이스가 {len(cases)}개입니다. 500개 이하로 줄여 주세요.")
         return cases
 
-    def build_sweep_commands(self, base_plan: dict, cases: list[dict[str, str]], dry_run: bool) -> tuple[list[list[str]], list[Path]]:
+    def build_sweep_commands(
+        self,
+        base_plan: dict,
+        cases: list[dict[str, str]],
+        dry_run: bool,
+        sweep_root: Path,
+    ) -> tuple[list[list[str]], list[Path]]:
         params = base_plan.get("parameters")
         if not isinstance(params, dict):
             raise ValueError("parameters는 object여야 합니다.")
@@ -666,10 +675,9 @@ class CSTVibeGUI:
             base_id = str(plan.get("design_id") or plan.get("name") or "mesh_frame_unitcell")
             case_slug = "_".join(f"{key}{self.safe_slug(value)}" for key, value in updates.items())
             plan["design_id"] = f"{base_id}_{case_slug}"
-            project = plan.setdefault("project", {"mode": "new"})
-            if not isinstance(project, dict):
-                raise ValueError("project는 object여야 합니다.")
-            project["save_as"] = f"output/{plan['design_id']}.cst"
+            case_dir = sweep_root / f"case_{index:03d}_{self.safe_slug(case_slug)}"
+            export_path = None if dry_run else case_dir / "exports" / "sparameters.s2p"
+            plan = self.prepare_solver_plan(plan, export_path)
 
             plan_path = self.write_runtime_plan(
                 json.dumps(plan, ensure_ascii=False, indent=2) + "\n",
@@ -677,13 +685,12 @@ class CSTVibeGUI:
             )
             cleanup_files.append(plan_path)
             cmd = [sys.executable, str(RUNNER), str(plan_path), "--prog-id", self.prog_id.get().strip()]
-            if not dry_run:
-                cmd.append("--package-run")
             if dry_run:
-                cmd.append("--dry-run")
+                cmd.extend(["--dry-run", "--no-project-save"])
             elif self.visible.get():
                 cmd.append("--visible")
-            cmd.append("--continue-on-error")
+            if not dry_run:
+                cmd.extend(["--run-dir", str(case_dir)])
             commands.append(cmd)
         return commands, cleanup_files
 
@@ -700,6 +707,7 @@ class CSTVibeGUI:
             self.output_queue.put(f"\n[스윕 실패] {exc}\n")
         finally:
             self.cleanup_temp_files(cleanup_files)
+            self.last_exit_code = worst_code
             self.output_queue.put(f"\n[{mode} 전체 종료 코드: {worst_code}]\n")
             self.output_queue.put(None)
 
@@ -811,6 +819,7 @@ class CSTVibeGUI:
         self.plan_text.insert("1.0", json.dumps(plan, ensure_ascii=False, indent=2) + "\n")
         self.plan_source.set(source)
         self.update_param_summary()
+        self.refresh_sweep_preview()
 
     def sync_wizard_from_plan(self, plan: dict) -> None:
         params = plan.get("parameters", {})
@@ -863,6 +872,32 @@ class CSTVibeGUI:
         if not isinstance(data, dict):
             raise ValueError("JSON 최상위는 object여야 합니다.")
         return data
+
+    def make_run_dir(self, prefix: str) -> Path:
+        timestamp = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
+        return APP_DIR / "runs" / f"{timestamp}_{self.safe_slug(prefix)}"
+
+    def prepare_solver_plan(self, base_plan: dict, export_path: Path | None) -> dict:
+        plan = copy.deepcopy(base_plan)
+        plan = self.ensure_default_boundary(plan)
+        commands = plan.get("commands")
+        if not isinstance(commands, list):
+            raise ValueError("commands는 list여야 합니다.")
+        filtered = [
+            item
+            for item in commands
+            if not (isinstance(item, dict) and item.get("op") in {"save", "solver_start", "export_touchstone"})
+        ]
+        if not any(isinstance(item, dict) and item.get("op") == "rebuild" for item in filtered):
+            filtered.append({"op": "rebuild"})
+        filtered.append({"op": "solver_start", "solver": "frequency"})
+        if export_path is not None:
+            filtered.append({"op": "export_touchstone", "path": str(export_path), "impedance": 50})
+        plan["commands"] = filtered
+        project = plan.setdefault("project", {"mode": "new"})
+        if isinstance(project, dict):
+            project["save_as"] = str(export_path.parents[1] / "cst_project.cst") if export_path is not None else project.get("save_as")
+        return plan
 
     def sync_wizard_parameters_if_needed(self) -> bool:
         if self.plan_source.get() != "wizard":
@@ -1053,36 +1088,33 @@ class CSTVibeGUI:
         self.append_output("[llm] JSON 변환 완료. 실행 전 확인을 먼저 누르세요.\n")
         self.append_output("[flow] LLM 결과의 기본 파라미터를 왼쪽 유닛셀 값에도 반영했습니다.\n")
         self.status.set("LLM JSON 변환 완료")
-        self.notebook.select(1)
+        self.notebook.select(self.json_tab)
 
-    def format_json(self) -> None:
-        try:
-            plan = self.current_plan()
-        except Exception as exc:
-            messagebox.showerror("JSON 오류", str(exc))
-            return
-        self.set_plan(plan, source=self.plan_source.get())
-        self.status.set("JSON 정렬 완료")
-
-    def run_connection_test(self) -> None:
-        plan_text = json.dumps({"project": {"mode": "new"}, "parameters": {}, "commands": []}, indent=2)
-        self.run_plan(dry_run=False, plan_text=plan_text, mode_label="CST 2025 연결 테스트")
-
-    def run_diagnostics(self) -> None:
-        if not self.sync_wizard_parameters_if_needed():
-            return
-        self.run_plan(False, mode_label="문제 진단", extra_args=["--continue-on-error", "--no-project-save"])
-
-    def run_geometry_in_cst(self) -> None:
+    def run_solve_and_collect(self) -> None:
         if not self.sync_wizard_parameters_if_needed():
             return
         if not self.rf_check(show_only=False):
             self.append_output("[stop] RF Check에 error가 있어 실행하지 않았습니다.\n")
             return
-        self.append_output("[flow] CST에 형상만 만들고 저장은 건너뜁니다.\n")
-        self.append_output("[flow] 형상이 뜨면 CST 안에서 Setup Solver의 Start를 눌러 해석하세요.\n\n")
-        self.after_run_action = "geometry_next"
-        self.run_plan(False, mode_label="CST에 형상 만들기", extra_args=["--continue-on-error", "--no-project-save"])
+        try:
+            base_plan = self.current_plan()
+            run_dir = self.make_run_dir(str(base_plan.get("design_id") or "mesh_frame_unitcell"))
+            export_path = run_dir / "exports" / "sparameters.s2p"
+            plan = self.prepare_solver_plan(base_plan, export_path)
+        except Exception as exc:
+            messagebox.showerror("실행 준비 실패", str(exc))
+            return
+
+        self.pending_result_dir = run_dir
+        self.after_run_action = "collect_results"
+        self.append_output("[flow] CST에서 형상을 만들고 기본 Frequency Solver Start를 실행합니다.\n")
+        self.append_output(f"[flow] 해석 후 S-parameter export: {export_path}\n\n")
+        self.run_plan(
+            False,
+            plan_text=json.dumps(plan, ensure_ascii=False, indent=2) + "\n",
+            mode_label="CST 해석 + 결과 보기",
+            extra_args=["--run-dir", str(run_dir)],
+        )
 
     def collect_sparams_dialog(self) -> None:
         if self.running:
@@ -1095,80 +1127,56 @@ class CSTVibeGUI:
         if not folder:
             return
         root = Path(folder)
-        output = root / "s11_s21_summary.csv"
-        cmd = [sys.executable, str(COLLECTOR), str(root), "--output", str(output)]
-        self.running = True
-        self.clear_output()
-        self.notebook.select(0)
-        self.status.set("S11/S21 정리 중...")
-        self.append_output(f"\n$ {' '.join(cmd)}\n\n")
-        threading.Thread(target=self.worker, args=(cmd, "S11/S21 정리", []), daemon=True).start()
-        self.root.after(80, self.drain_output_queue)
+        self.collect_and_show_results(root)
 
-    def open_after_geometry_dialog(self) -> None:
-        win = Toplevel(self.root)
-        win.title("다음 작업")
-        win.geometry("520x330")
-        win.transient(self.root)
-        win.grab_set()
-        frm = ttk.Frame(win, padding=18)
-        frm.pack(fill=BOTH, expand=True)
-        frm.columnconfigure(0, weight=1)
-
-        ttk.Label(
-            frm,
-            text="형상 생성이 끝났습니다",
-            font=("Segoe UI Semibold", 14),
-        ).grid(row=0, column=0, sticky="w", pady=(0, 8))
-        ttk.Label(
-            frm,
-            text="이제 CST 화면에서 solver를 바로 시작하거나, 스윕 조건을 설정하거나, 이미 export한 결과를 정리할 수 있습니다.",
-            wraplength=470,
-            foreground=self.colors["muted"],
-        ).grid(row=1, column=0, sticky="ew", pady=(0, 14))
-
-        ttk.Button(
-            frm,
-            text="그냥 돌리기: CST에서 Setup Solver -> Start",
-            style="Accent.TButton",
-            command=lambda: self.show_solver_start_hint(win),
-        ).grid(row=2, column=0, sticky="ew", pady=4)
-        ttk.Button(
-            frm,
-            text="스윕 설정하기: CST Parametric Sweep 사용",
-            command=lambda: self.show_cst_sweep_hint(win),
-        ).grid(row=3, column=0, sticky="ew", pady=4)
-        ttk.Button(
-            frm,
-            text="S11/S21 정리하기",
-            command=lambda: (win.destroy(), self.collect_sparams_dialog()),
-        ).grid(row=4, column=0, sticky="ew", pady=4)
-        ttk.Button(frm, text="닫기", command=win.destroy).grid(row=5, column=0, sticky="ew", pady=(14, 0))
-
-    def show_solver_start_hint(self, win: Toplevel) -> None:
-        win.destroy()
-        self.append_output("[next] CST 화면에서 Setup Solver -> Start를 눌러 단일 해석을 시작하세요.\n")
-        self.append_output("[next] 해석이 끝나면 S-parameter를 .s2p로 export하고, S11/S21 정리를 누르면 됩니다.\n\n")
-        self.status.set("CST에서 Setup Solver Start")
-
-    def show_cst_sweep_hint(self, win: Toplevel) -> None:
-        win.destroy()
-        self.append_output("[next] CST 내부 Parametric Sweep을 설정하세요.\n")
-        self.append_output("[next] 현재 Python은 형상 치수를 숫자로 넘기므로, CST 내부 sweep을 쓰려면 CST에서 sweep용 파라미터/식 설정이 필요합니다.\n")
-        self.append_output("[next] 해석 결과를 .s2p 또는 CSV로 export한 뒤 S11/S21 정리를 누르면 됩니다.\n\n")
-        messagebox.showinfo(
-            "CST 내부 스윕",
-            "CST에서 Parametric Sweep을 설정한 뒤 Setup Solver의 Start를 누르세요.\n"
-            "현재 도구는 형상 생성과 결과 정리를 담당합니다.",
-        )
-
-    def run_rf_package_cst(self) -> None:
-        if not self.sync_wizard_parameters_if_needed():
+    def collect_and_show_results(self, root: Path) -> None:
+        try:
+            rows = collect_sparams.collect(root)
+            output = root / "s11_s21_summary.csv"
+            collect_sparams.write_summary(output, rows)
+        except Exception as exc:
+            messagebox.showerror("S11/S21 정리 실패", str(exc))
             return
-        if not self.rf_check(show_only=False):
-            self.append_output("[stop] RF Check에 error가 있어 실행하지 않았습니다.\n")
-            return
-        self.run_plan(False, mode_label="CST 실행 + 결과폴더", extra_args=["--package-run", "--continue-on-error"])
+        self.show_result_rows(rows, output)
+        self.append_output(f"[collect] rows={len(rows)}\n")
+        self.append_output(f"[collect] output={output}\n\n")
+        self.status.set(f"S11/S21 정리 완료: {len(rows)} rows")
+
+    def show_result_rows(self, rows: list[dict[str, str]], output: Path) -> None:
+        self.result_text.delete("1.0", END)
+        lines = [f"summary: {output}", f"rows: {len(rows)}", ""]
+        numeric_rows = []
+        for row in rows:
+            try:
+                numeric_rows.append((float(row["freq_ghz"]), float(row["s11_db"]), float(row["s21_db"])))
+            except Exception:
+                pass
+        if numeric_rows:
+            min_s11 = min(item[1] for item in numeric_rows)
+            min_s21 = min(item[2] for item in numeric_rows)
+            max_s21 = max(item[2] for item in numeric_rows)
+            lines.extend(
+                [
+                    f"min S11: {min_s11:.3f} dB",
+                    f"min S21: {min_s21:.3f} dB",
+                    f"max S21: {max_s21:.3f} dB",
+                    "",
+                ]
+            )
+        if rows:
+            lines.append(f"{'freq_ghz':>12} {'s11_db':>12} {'s21_db':>12}  source")
+            lines.append("-" * 78)
+            for row in rows[:300]:
+                source = Path(row.get("source", "")).name
+                lines.append(
+                    f"{row.get('freq_ghz', ''):>12} {row.get('s11_db', ''):>12} {row.get('s21_db', ''):>12}  {source}"
+                )
+            if len(rows) > 300:
+                lines.append(f"... 외 {len(rows) - 300} rows")
+        else:
+            lines.append("S11/S21 데이터를 찾지 못했습니다. CST export 폴더에 .s2p 또는 S11/S21 컬럼이 있는 CSV를 넣고 다시 불러오세요.")
+        self.result_text.insert("1.0", "\n".join(lines) + "\n")
+        self.notebook.select(self.result_tab)
 
     def run_plan(
         self,
@@ -1197,6 +1205,7 @@ class CSTVibeGUI:
             cmd.extend(extra_args)
 
         self.running = True
+        self.last_exit_code = None
         self.append_output(f"\n$ {' '.join(cmd)}\n\n")
         self.notebook.select(0)
         self.status.set(f"{mode_label or '실행'} 중...")
@@ -1206,8 +1215,10 @@ class CSTVibeGUI:
     def worker(self, cmd: list[str], mode: str, cleanup_files: list[Path]) -> None:
         try:
             code = self.run_subprocess_to_queue(cmd)
+            self.last_exit_code = code
             self.output_queue.put(f"\n[{mode} 종료 코드: {code}]\n")
         except Exception as exc:
+            self.last_exit_code = 1
             self.output_queue.put(f"\n[실행 실패] {exc}\n")
         finally:
             self.cleanup_temp_files(cleanup_files)
@@ -1261,9 +1272,15 @@ class CSTVibeGUI:
         if finished:
             self.mark_not_running()
             self.status.set("완료")
-            if self.after_run_action == "geometry_next":
+            if self.after_run_action == "collect_results":
                 self.after_run_action = None
-                self.root.after(100, self.open_after_geometry_dialog)
+                result_dir = self.pending_result_dir
+                self.pending_result_dir = None
+                if result_dir is not None:
+                    if self.last_exit_code not in (0, None):
+                        self.append_output("[collect] 실행 중 에러가 있었지만 생성된 결과가 있는지 확인합니다.\n")
+                    self.root.after(100, lambda: self.collect_and_show_results(result_dir))
+                return
             return
         self.root.after(80, self.drain_output_queue)
 
@@ -1276,33 +1293,6 @@ class CSTVibeGUI:
 
     def clear_output(self) -> None:
         self.output_text.delete("1.0", END)
-
-    def copy_output(self) -> None:
-        text = self.output_text.get("1.0", "end-1c")
-        self.root.clipboard_clear()
-        self.root.clipboard_append(text)
-        self.status.set("출력을 복사했습니다.")
-
-    def save_output_report(self) -> None:
-        text = self.output_text.get("1.0", "end-1c")
-        if not text.strip():
-            messagebox.showinfo("저장할 출력 없음", "먼저 실행 또는 진단을 하세요.")
-            return
-        path = filedialog.asksaveasfilename(
-            title="리포트 저장",
-            initialdir=str(APP_DIR),
-            initialfile="cst_vibe_diagnostic_report.txt",
-            defaultextension=".txt",
-            filetypes=[("Text", "*.txt"), ("All files", "*.*")],
-        )
-        if not path:
-            return
-        try:
-            Path(path).write_text(text, encoding="utf-8")
-        except OSError as exc:
-            messagebox.showerror("저장 실패", str(exc))
-            return
-        self.status.set(f"리포트 저장됨: {path}")
 
 
 def main() -> None:
