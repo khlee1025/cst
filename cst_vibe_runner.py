@@ -10,6 +10,7 @@ written by hand. Use --dry-run first to inspect the generated CST macros.
 from __future__ import annotations
 
 import argparse
+import ast
 import copy
 import datetime as dt
 import json
@@ -55,6 +56,123 @@ def q(value: Any) -> str:
         return '""'
     text = str(value).replace('"', '""')
     return f'"{text}"'
+
+
+def fmt_number(value: float) -> str:
+    return f"{value:.12g}"
+
+
+def eval_numeric_expression(value: Any, context: dict[str, float]) -> float:
+    if isinstance(value, (int, float)):
+        return float(value)
+    text = str(value).strip()
+    if not text:
+        raise PlanError("Numeric expression is empty.")
+    try:
+        return float(text)
+    except ValueError:
+        pass
+
+    operators = {
+        ast.Add: lambda a, b: a + b,
+        ast.Sub: lambda a, b: a - b,
+        ast.Mult: lambda a, b: a * b,
+        ast.Div: lambda a, b: a / b,
+        ast.USub: lambda a: -a,
+        ast.UAdd: lambda a: a,
+    }
+
+    def visit(node: ast.AST) -> float:
+        if isinstance(node, ast.Expression):
+            return visit(node.body)
+        if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)):
+            return float(node.value)
+        if isinstance(node, ast.Name):
+            if node.id not in context:
+                raise PlanError(f"Unknown numeric parameter '{node.id}' in expression '{text}'.")
+            return context[node.id]
+        if isinstance(node, ast.BinOp) and type(node.op) in operators:
+            return operators[type(node.op)](visit(node.left), visit(node.right))
+        if isinstance(node, ast.UnaryOp) and type(node.op) in operators:
+            return operators[type(node.op)](visit(node.operand))
+        raise PlanError(f"Unsupported numeric expression: {text}")
+
+    try:
+        parsed = ast.parse(text, mode="eval")
+    except SyntaxError as exc:
+        raise PlanError(f"Invalid numeric expression: {text}") from exc
+    return visit(parsed)
+
+
+def resolve_numeric(value: Any, context: dict[str, float]) -> str:
+    return fmt_number(eval_numeric_expression(value, context))
+
+
+def build_numeric_context(parameters: dict[str, Any]) -> dict[str, float]:
+    context: dict[str, float] = {}
+    pending = dict(parameters)
+    while pending:
+        progressed = False
+        for key, value in list(pending.items()):
+            try:
+                context[str(key)] = eval_numeric_expression(value, context)
+            except PlanError:
+                continue
+            del pending[key]
+            progressed = True
+        if not progressed:
+            names = ", ".join(str(name) for name in pending)
+            raise PlanError(f"Could not resolve numeric parameters: {names}")
+    return context
+
+
+def resolve_pair(values: list[Any], context: dict[str, float]) -> list[str]:
+    return [resolve_numeric(values[0], context), resolve_numeric(values[1], context)]
+
+
+def resolve_point(values: Any, context: dict[str, float], field: str) -> list[str]:
+    if not isinstance(values, list) or len(values) != 3:
+        raise PlanError(f"{field} must be [x, y, z].")
+    return [resolve_numeric(item, context) for item in values]
+
+
+def resolve_command_numbers(command: dict[str, Any], context: dict[str, float]) -> None:
+    op = command.get("op")
+    if op == "frequency_range":
+        command["fmin"] = resolve_numeric(require(command, "fmin"), context)
+        command["fmax"] = resolve_numeric(require(command, "fmax"), context)
+    elif op == "brick":
+        command["xrange"] = resolve_pair(expect_pair(command, "xrange"), context)
+        command["yrange"] = resolve_pair(expect_pair(command, "yrange"), context)
+        command["zrange"] = resolve_pair(expect_pair(command, "zrange"), context)
+    elif op == "cylinder":
+        command["radius"] = resolve_numeric(require(command, "radius"), context)
+        command["zrange"] = resolve_pair(expect_pair(command, "zrange"), context)
+        command["xcenter"] = resolve_numeric(command.get("xcenter", 0), context)
+        command["ycenter"] = resolve_numeric(command.get("ycenter", 0), context)
+    elif op == "discrete_port":
+        command["point1"] = resolve_point(command.get("point1"), context, "discrete_port.point1")
+        command["point2"] = resolve_point(command.get("point2"), context, "discrete_port.point2")
+    elif op == "material":
+        for key in ("epsilon", "mue", "tand", "sigma", "rho"):
+            if key in command:
+                command[key] = resolve_numeric(command[key], context)
+    elif op == "background":
+        for key in ("epsilon", "mue", "xmin_space", "xmax_space", "ymin_space", "ymax_space", "zmin_space", "zmax_space"):
+            if key in command:
+                command[key] = resolve_numeric(command[key], context)
+    elif op == "sweep":
+        nested = require(command, "commands")
+        if isinstance(nested, list):
+            for item in nested:
+                if isinstance(item, dict):
+                    resolve_command_numbers(item, context)
+
+
+def resolve_plan_numbers(commands: list[Any], context: dict[str, float]) -> None:
+    for raw in commands:
+        if isinstance(raw, dict):
+            resolve_command_numbers(raw, context)
 
 
 def expect_pair(command: dict[str, Any], key: str) -> list[Any]:
@@ -622,12 +740,19 @@ def run_plan(plan: dict[str, Any], args: argparse.Namespace) -> None:
     parameters = plan.get("parameters", {})
     if not isinstance(parameters, dict):
         raise PlanError("parameters must be an object.")
-    for name, value in parameters.items():
-        session.store_parameter(str(name), value)
 
     commands = plan.get("commands", [])
     if not isinstance(commands, list):
         raise PlanError("commands must be a list.")
+    numeric_context = build_numeric_context(parameters)
+    if numeric_context:
+        for name, value in numeric_context.items():
+            print(f"[param] {name} = {fmt_number(value)}")
+        resolve_plan_numbers(commands, numeric_context)
+        print("[param] CST macro expressions resolved to numbers; no New Parameter dialog is needed.")
+    if args.store_parameters:
+        for name, value in parameters.items():
+            session.store_parameter(str(name), value)
     execute_commands(session, commands)
 
     if project.get("save_as"):
@@ -704,6 +829,11 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         "--prog-id",
         default="CSTStudio.Application.2025",
         help="CST COM ProgID. Default: CSTStudio.Application.2025",
+    )
+    parser.add_argument(
+        "--store-parameters",
+        action="store_true",
+        help="Also create CST parameters with StoreParameter. Off by default to avoid CST New Parameter popups.",
     )
     return parser.parse_args(argv)
 

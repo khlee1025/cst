@@ -60,6 +60,8 @@ CSTStudio.Application.2025
 
 주의: 이 값들은 CST가 켜진 뒤 손으로 다시 넣는 값이 아닙니다. Python이 CST에 자동으로 넘깁니다.
 
+더 정확히 말하면 기본 실행에서는 CST에 새 파라미터를 만들지 않고, Python이 먼저 계산한 숫자를 넘깁니다. 예를 들어 `p=10`이면 `-p/2`를 CST에 보내는 대신 `-5`를 보냅니다. 그래서 CST의 `New Parameter` 팝업에서 사용자가 다시 입력할 일이 없어야 합니다.
+
 ## 5. LLM으로 대사 입력하기
 
 회사/로컬 LLM 서버를 쓰려면 먼저 `설정`에서 아래를 맞춥니다.
@@ -217,6 +219,18 @@ CSTStudio.Application
 CSTStudio.Application.2024
 CSTStudio.Application.2023
 ```
+
+### CST가 New Parameter를 계속 물어봄
+
+최신 버전에서는 기본 실행에서 `StoreParameter`를 호출하지 않고 숫자로 계산해서 넘깁니다.
+
+출력창에 아래 문장이 있어야 합니다.
+
+```text
+[param] CST macro expressions resolved to numbers; no New Parameter dialog is needed.
+```
+
+만약 CLI에서 `--store-parameters`를 직접 붙였다면 빼고 다시 실행하세요.
 
 ### AddToHistory 에러
 
