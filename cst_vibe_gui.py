@@ -38,6 +38,15 @@ class CSTVibeGUI:
         self.status = StringVar(value="준비됨")
         self.prog_id = StringVar(value="CSTStudio.Application")
         self.visible = BooleanVar(value=True)
+        self.wizard_p = StringVar(value="10")
+        self.wizard_sub_t = StringVar(value="0.8")
+        self.wizard_copper_t = StringVar(value="0.035")
+        self.wizard_patch_w = StringVar(value="7.2")
+        self.wizard_fmin = StringVar(value="1")
+        self.wizard_fmax = StringVar(value="18")
+        self.wizard_epsilon = StringVar(value="4.3")
+        self.wizard_tand = StringVar(value="0.02")
+        self.wizard_boundary = BooleanVar(value=False)
         self.running = False
         self.output_queue: queue.Queue[str | None] = queue.Queue()
 
@@ -169,6 +178,40 @@ class CSTVibeGUI:
 
         ttk.Label(
             parent,
+            text="설계 마법사",
+            style="Panel.TLabel",
+            font=("Segoe UI Semibold", 12),
+        ).pack(anchor="w")
+        ttk.Label(
+            parent,
+            text="CST 2025 안전 기본값입니다. 포트와 solver는 넣지 않고 형상만 만듭니다.",
+            style="Muted.TLabel",
+            wraplength=300,
+            justify=LEFT,
+        ).pack(anchor="w", pady=(4, 8))
+
+        wizard = ttk.Frame(parent, style="Panel.TFrame")
+        wizard.pack(fill=X)
+        self.add_wizard_row(wizard, 0, "p 주기", self.wizard_p)
+        self.add_wizard_row(wizard, 1, "sub_t 기판", self.wizard_sub_t)
+        self.add_wizard_row(wizard, 2, "copper_t 구리", self.wizard_copper_t)
+        self.add_wizard_row(wizard, 3, "patch_w 패치", self.wizard_patch_w)
+        self.add_wizard_row(wizard, 4, "fmin", self.wizard_fmin)
+        self.add_wizard_row(wizard, 5, "fmax", self.wizard_fmax)
+        self.add_wizard_row(wizard, 6, "epsilon", self.wizard_epsilon)
+        self.add_wizard_row(wizard, 7, "tand", self.wizard_tand)
+        ttk.Checkbutton(
+            parent,
+            text="유닛셀 경계조건 포함",
+            variable=self.wizard_boundary,
+        ).pack(anchor="w", pady=(8, 2))
+        ttk.Button(parent, text="형상 JSON 만들기", command=self.apply_wizard_plan).pack(fill=X, pady=(8, 4))
+        ttk.Button(parent, text="JSON 만들고 드라이런", command=self.apply_wizard_and_dry).pack(fill=X, pady=4)
+
+        ttk.Separator(parent).pack(fill=X, pady=16)
+
+        ttk.Label(
+            parent,
             text="CST 연결",
             style="Panel.TLabel",
             font=("Segoe UI Semibold", 12),
@@ -190,6 +233,17 @@ class CSTVibeGUI:
         ttk.Button(parent, text="JSON 정렬", command=self.format_json).pack(fill=X, pady=4)
         ttk.Button(parent, text="출력 복사", command=self.copy_output).pack(fill=X, pady=4)
         ttk.Button(parent, text="출력 지우기", command=self.clear_output).pack(fill=X, pady=4)
+
+    def add_wizard_row(
+        self,
+        parent: ttk.Frame,
+        row: int,
+        label: str,
+        variable: StringVar,
+    ) -> None:
+        ttk.Label(parent, text=label, style="Muted.TLabel").grid(row=row, column=0, sticky="w", pady=2)
+        ttk.Entry(parent, textvariable=variable, width=12).grid(row=row, column=1, sticky="ew", pady=2)
+        parent.columnconfigure(1, weight=1)
 
     def build_right_panel(self, parent: ttk.Frame) -> None:
         toolbar = ttk.Frame(parent, style="Panel.TFrame")
@@ -330,6 +384,114 @@ class CSTVibeGUI:
         self.plan_text.delete("1.0", END)
         self.plan_text.insert("1.0", formatted + "\n")
         self.set_status("JSON을 보기 좋게 정렬했습니다.")
+
+    def apply_wizard_plan(self) -> bool:
+        try:
+            plan = self.build_wizard_plan()
+        except ValueError as exc:
+            messagebox.showerror("설계값 오류", str(exc))
+            return False
+
+        self.plan_text.delete("1.0", END)
+        self.plan_text.insert("1.0", json.dumps(plan, ensure_ascii=False, indent=2) + "\n")
+        self.plan_path.set(str(APP_DIR / "generated_patch_unitcell.json"))
+        self.set_status("설계 마법사 JSON을 만들었습니다. 먼저 드라이런으로 확인하세요.")
+        return True
+
+    def apply_wizard_and_dry(self) -> None:
+        if self.apply_wizard_plan():
+            self.run_dry()
+
+    def build_wizard_plan(self) -> dict[str, object]:
+        values = {
+            "p": self.wizard_p.get().strip(),
+            "sub_t": self.wizard_sub_t.get().strip(),
+            "copper_t": self.wizard_copper_t.get().strip(),
+            "patch_w": self.wizard_patch_w.get().strip(),
+            "fmin": self.wizard_fmin.get().strip(),
+            "fmax": self.wizard_fmax.get().strip(),
+            "epsilon": self.wizard_epsilon.get().strip(),
+            "tand": self.wizard_tand.get().strip(),
+        }
+        for key, value in values.items():
+            if not value:
+                raise ValueError(f"{key} 값이 비어 있습니다.")
+
+        numeric = {key: float(value) for key, value in values.items()}
+        if numeric["p"] <= 0:
+            raise ValueError("p는 0보다 커야 합니다.")
+        if numeric["sub_t"] <= 0 or numeric["copper_t"] <= 0:
+            raise ValueError("sub_t와 copper_t는 0보다 커야 합니다.")
+        if numeric["patch_w"] <= 0:
+            raise ValueError("patch_w는 0보다 커야 합니다.")
+        if numeric["patch_w"] >= numeric["p"]:
+            raise ValueError("patch_w는 p보다 작아야 합니다. 패치가 유닛셀 밖으로 나갑니다.")
+        if numeric["fmax"] <= numeric["fmin"]:
+            raise ValueError("fmax는 fmin보다 커야 합니다.")
+
+        commands: list[dict[str, object]] = [
+            {"op": "units", "geometry": "mm", "frequency": "GHz", "time": "ns"},
+            {"op": "frequency_range", "fmin": "fmin", "fmax": "fmax"},
+        ]
+        if self.wizard_boundary.get():
+            commands.append(
+                {
+                    "op": "boundary",
+                    "xmin": "unit cell",
+                    "xmax": "unit cell",
+                    "ymin": "unit cell",
+                    "ymax": "unit cell",
+                    "zmin": "open",
+                    "zmax": "open",
+                }
+            )
+        commands.extend(
+            [
+                {
+                    "op": "material",
+                    "name": "FR4_local",
+                    "epsilon": "epsilon",
+                    "mue": "1.0",
+                    "tand": "tand",
+                    "color": [0.1, 0.55, 0.25],
+                },
+                {
+                    "op": "brick",
+                    "name": "substrate",
+                    "component": "unitcell",
+                    "material": "FR4_local",
+                    "xrange": ["-p/2", "p/2"],
+                    "yrange": ["-p/2", "p/2"],
+                    "zrange": ["0", "sub_t"],
+                },
+                {
+                    "op": "brick",
+                    "name": "top_patch",
+                    "component": "unitcell",
+                    "material": "Copper (annealed)",
+                    "xrange": ["-patch_w/2", "patch_w/2"],
+                    "yrange": ["-patch_w/2", "patch_w/2"],
+                    "zrange": ["sub_t", "sub_t+copper_t"],
+                },
+                {"op": "rebuild"},
+                {"op": "save"},
+            ]
+        )
+
+        return {
+            "project": {"mode": "new", "save_as": "output/generated_patch_unitcell.cst"},
+            "parameters": {
+                "p": values["p"],
+                "sub_t": values["sub_t"],
+                "copper_t": values["copper_t"],
+                "patch_w": values["patch_w"],
+                "fmin": values["fmin"],
+                "fmax": values["fmax"],
+                "epsilon": values["epsilon"],
+                "tand": values["tand"],
+            },
+            "commands": commands,
+        }
 
     def run_dry(self) -> None:
         self.run_plan(dry_run=True)

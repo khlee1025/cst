@@ -180,9 +180,37 @@ examples/03_patch_unitcell_with_ports_experimental.json
 
 ## GUI에서 안전하게 쓰는 법
 
+### 방법 A: 설계 마법사 사용
+
+GUI 왼쪽의 `설계 마법사`에 숫자를 넣으면 회사 LLM을 왔다 갔다 하지 않아도 기본 JSON을 만들 수 있습니다.
+
+1. `p`, `sub_t`, `copper_t`, `patch_w`, `fmin`, `fmax`를 입력합니다.
+2. 처음에는 `유닛셀 경계조건 포함`을 끄고 시작합니다.
+3. `형상 JSON 만들기`를 누릅니다.
+4. `드라이런`으로 생성될 CST 매크로를 확인합니다.
+5. CST에서 `CST 실행`을 눌러 형상만 먼저 확인합니다.
+
+설계 마법사는 기본적으로 포트와 solver를 넣지 않습니다. CST 2025에서 초심자가 확인하기 가장 안전한 방식입니다.
+
+### 방법 B: 예제 파일 사용
+
 1. `열기` 버튼으로 `examples/02_patch_unitcell_no_ports.json`를 엽니다.
 2. `드라이런`을 누릅니다.
 3. 출력에 `create brick substrate`, `create brick top_patch`가 있는지 확인합니다.
 4. `CST 실행`을 누릅니다.
 5. CST에서 형상만 먼저 확인합니다.
 6. 형상이 맞으면 그때 포트와 경계조건을 추가합니다.
+
+## CST 2025 CT 버전 추천 설정
+
+처음에는 아래 설정으로 시작하세요.
+
+```text
+COM ProgID: CSTStudio.Application
+CST UI 보이기: 켬
+유닛셀 경계조건 포함: 끔
+포트: 만들지 않음
+solver_start: 넣지 않음
+```
+
+이 상태에서 형상이 정확히 만들어지는 것을 확인한 뒤에만 경계조건과 포트를 추가하는 것이 좋습니다.
