@@ -1,6 +1,8 @@
 __pycache__/
 *.py[cod]
 .cst_vibe_gui_last_plan.json
+cst_llm_config.json
+llm_generated_plan.json
 output/
 runs/
 .venv/

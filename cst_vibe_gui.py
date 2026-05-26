@@ -9,6 +9,7 @@ first version can run on a CST workstation without extra GUI packages.
 from __future__ import annotations
 
 import json
+import os
 import queue
 import subprocess
 import sys
@@ -25,6 +26,26 @@ RUNNER = APP_DIR / "cst_vibe_runner.py"
 EXAMPLE_PLAN = APP_DIR / "examples" / "02_patch_unitcell_no_ports.json"
 PROMPT_FILE = APP_DIR / "prompt_for_local_llm.md"
 TEMP_PLAN = APP_DIR / ".cst_vibe_gui_last_plan.json"
+LLM_CONFIG = APP_DIR / "cst_llm_config.json"
+
+
+def extract_json_object(text: str) -> dict:
+    stripped = text.strip()
+    if stripped.startswith("```"):
+        stripped = stripped.strip("`")
+        if stripped.lower().startswith("json"):
+            stripped = stripped[4:].strip()
+    try:
+        data = json.loads(stripped)
+    except json.JSONDecodeError:
+        start = stripped.find("{")
+        end = stripped.rfind("}")
+        if start < 0 or end <= start:
+            raise
+        data = json.loads(stripped[start : end + 1])
+    if not isinstance(data, dict):
+        raise ValueError("LLM output must be a JSON object.")
+    return data
 
 
 class CSTVibeGUI:
@@ -47,6 +68,11 @@ class CSTVibeGUI:
         self.wizard_epsilon = StringVar(value="4.3")
         self.wizard_tand = StringVar(value="0.02")
         self.wizard_boundary = BooleanVar(value=False)
+        self.auto_sync_wizard = BooleanVar(value=True)
+        self.llm_api_key = StringVar(value=os.getenv("LLM_API_KEY", ""))
+        self.llm_base_url = StringVar(value=os.getenv("LLM_BASE_URL", "http://10.240.246.158:8000/v1"))
+        self.llm_model = StringVar(value=os.getenv("LLM_MODEL", "Qwen3.5-122B"))
+        self.llm_max_tokens = StringVar(value=os.getenv("LLM_MAX_TOKENS", "4096"))
         self.running = False
         self.output_queue: queue.Queue[str | None] = queue.Queue()
 
@@ -65,6 +91,7 @@ class CSTVibeGUI:
         }
 
         self.configure_style()
+        self.load_llm_config()
         self.build_layout()
         self.load_example()
 
@@ -205,8 +232,39 @@ class CSTVibeGUI:
             text="유닛셀 경계조건 포함",
             variable=self.wizard_boundary,
         ).pack(anchor="w", pady=(8, 2))
+        ttk.Checkbutton(
+            parent,
+            text="마법사 값 자동 반영",
+            variable=self.auto_sync_wizard,
+        ).pack(anchor="w", pady=2)
         ttk.Button(parent, text="형상 JSON 만들기", command=self.apply_wizard_plan).pack(fill=X, pady=(8, 4))
         ttk.Button(parent, text="JSON 만들고 드라이런", command=self.apply_wizard_and_dry).pack(fill=X, pady=4)
+
+        ttk.Separator(parent).pack(fill=X, pady=16)
+
+        ttk.Label(
+            parent,
+            text="LLM 변환",
+            style="Panel.TLabel",
+            font=("Segoe UI Semibold", 12),
+        ).pack(anchor="w")
+        ttk.Label(
+            parent,
+            text="회사/로컬 OpenAI 호환 LLM으로 요청 메모를 JSON으로 변환합니다.",
+            style="Muted.TLabel",
+            wraplength=300,
+            justify=LEFT,
+        ).pack(anchor="w", pady=(4, 8))
+
+        llm_box = ttk.Frame(parent, style="Panel.TFrame")
+        llm_box.pack(fill=X)
+        self.add_wizard_row(llm_box, 0, "Base URL", self.llm_base_url)
+        self.add_wizard_row(llm_box, 1, "Model", self.llm_model)
+        self.add_wizard_row(llm_box, 2, "API Key", self.llm_api_key)
+        self.add_wizard_row(llm_box, 3, "Max tokens", self.llm_max_tokens)
+        ttk.Button(parent, text="LLM 설정 저장", command=self.save_llm_config).pack(fill=X, pady=(8, 4))
+        ttk.Button(parent, text="LLM 연결 테스트", command=self.test_llm_connection).pack(fill=X, pady=4)
+        ttk.Button(parent, text="대사 -> JSON", command=self.convert_request_with_llm).pack(fill=X, pady=4)
 
         ttk.Separator(parent).pack(fill=X, pady=16)
 
@@ -311,6 +369,135 @@ class CSTVibeGUI:
         )
         self.output_text.pack(fill=BOTH, expand=True)
 
+    def load_llm_config(self) -> None:
+        if not LLM_CONFIG.exists():
+            return
+        try:
+            data = json.loads(LLM_CONFIG.read_text(encoding="utf-8"))
+        except Exception:
+            return
+        self.llm_api_key.set(str(data.get("api_key", self.llm_api_key.get())))
+        self.llm_base_url.set(str(data.get("base_url", self.llm_base_url.get())))
+        self.llm_model.set(str(data.get("model", self.llm_model.get())))
+        self.llm_max_tokens.set(str(data.get("max_tokens", self.llm_max_tokens.get())))
+
+    def save_llm_config(self) -> None:
+        try:
+            data = {
+                "api_key": self.llm_api_key.get().strip(),
+                "base_url": self.llm_base_url.get().strip(),
+                "model": self.llm_model.get().strip(),
+                "max_tokens": int(self.llm_max_tokens.get().strip()),
+            }
+            LLM_CONFIG.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        except Exception as exc:
+            messagebox.showerror("LLM 설정 저장 실패", str(exc))
+            return
+        self.set_status("LLM 설정을 저장했습니다.")
+
+    def llm_client(self):
+        try:
+            from openai import OpenAI
+        except ImportError as exc:
+            raise RuntimeError("openai 패키지가 필요합니다: python -m pip install openai") from exc
+        return OpenAI(
+            api_key=self.llm_api_key.get().strip() or "sk-ignored",
+            base_url=self.llm_base_url.get().strip(),
+        )
+
+    def test_llm_connection(self) -> None:
+        if self.running:
+            messagebox.showinfo("실행 중", "이미 실행 중입니다.")
+            return
+        self.running = True
+        self.clear_output()
+        self.notebook.select(1)
+        self.append_output("[llm] 연결 테스트 시작\n")
+        self.set_status("LLM 연결 테스트 중...")
+
+        def worker() -> None:
+            try:
+                resp = self.llm_client().chat.completions.create(
+                    model=self.llm_model.get().strip(),
+                    messages=[{"role": "user", "content": "JSON 변환 준비가 되었으면 ok라고만 답하세요."}],
+                    max_tokens=50,
+                    temperature=0.0,
+                )
+                answer = (resp.choices[0].message.content or "").strip()
+                self.root.after(0, lambda: self.append_output(f"[llm] 연결 성공: {answer}\n"))
+                self.root.after(0, lambda: self.set_status("LLM 연결 성공"))
+            except Exception as exc:
+                self.root.after(0, lambda exc=exc: self.append_output(f"[llm] 연결 실패: {exc}\n"))
+                self.root.after(0, lambda: self.set_status("LLM 연결 실패"))
+            finally:
+                self.root.after(0, self._mark_not_running)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def convert_request_with_llm(self) -> None:
+        if self.running:
+            messagebox.showinfo("실행 중", "이미 실행 중입니다.")
+            return
+        request = self.request_text.get("1.0", "end-1c").strip()
+        if not request:
+            messagebox.showerror("요청 없음", "왼쪽 요청 메모에 CST 작업 대사를 입력하세요.")
+            return
+        try:
+            prompt = PROMPT_FILE.read_text(encoding="utf-8")
+        except OSError as exc:
+            messagebox.showerror("프롬프트 읽기 실패", str(exc))
+            return
+
+        self.save_llm_config()
+        self.running = True
+        self.clear_output()
+        self.notebook.select(1)
+        self.append_output("[llm] 대사를 JSON으로 변환 중...\n")
+        self.set_status("LLM JSON 변환 중...")
+
+        def worker() -> None:
+            try:
+                messages = [
+                    {"role": "system", "content": prompt},
+                    {
+                        "role": "user",
+                        "content": (
+                            "아래 요청을 CST Vibe Runner JSON으로 변환하세요. "
+                            "반드시 JSON만 출력하세요.\n\n"
+                            f"{request}"
+                        ),
+                    },
+                ]
+                resp = self.llm_client().chat.completions.create(
+                    model=self.llm_model.get().strip(),
+                    messages=messages,
+                    max_tokens=int(self.llm_max_tokens.get().strip()),
+                    temperature=0.1,
+                )
+                content = resp.choices[0].message.content or ""
+                plan = extract_json_object(content)
+                formatted = json.dumps(plan, ensure_ascii=False, indent=2) + "\n"
+                self.root.after(0, lambda: self._apply_llm_plan(formatted))
+            except Exception as exc:
+                self.root.after(0, lambda exc=exc: self.append_output(f"[llm] JSON 변환 실패: {exc}\n"))
+                self.root.after(0, lambda: self.set_status("LLM JSON 변환 실패"))
+            finally:
+                self.root.after(0, self._mark_not_running)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _apply_llm_plan(self, formatted: str) -> None:
+        self.plan_text.delete("1.0", END)
+        self.plan_text.insert("1.0", formatted)
+        self.plan_path.set(str(APP_DIR / "llm_generated_plan.json"))
+        self.auto_sync_wizard.set(False)
+        self.append_output("[llm] JSON 변환 완료. RF Check와 드라이런을 먼저 실행하세요.\n")
+        self.append_output("[llm] 마법사 값 자동 반영을 껐습니다. LLM JSON 파라미터가 그대로 실행됩니다.\n")
+        self.set_status("LLM JSON 변환 완료")
+
+    def _mark_not_running(self) -> None:
+        self.running = False
+
     def copy_prompt(self) -> None:
         try:
             text = PROMPT_FILE.read_text(encoding="utf-8")
@@ -391,7 +578,7 @@ class CSTVibeGUI:
         self.set_status("JSON을 보기 좋게 정렬했습니다.")
 
     def validate_current_plan(self) -> None:
-        if not self.sync_wizard_parameters_to_json():
+        if self.auto_sync_wizard.get() and not self.sync_wizard_parameters_to_json():
             return
         try:
             plan = json.loads(self.current_plan_text())
@@ -457,6 +644,7 @@ class CSTVibeGUI:
         self.plan_text.delete("1.0", END)
         self.plan_text.insert("1.0", json.dumps(plan, ensure_ascii=False, indent=2) + "\n")
         self.plan_path.set(str(APP_DIR / "generated_patch_unitcell.json"))
+        self.auto_sync_wizard.set(True)
         self.set_status("설계 마법사 JSON을 만들었습니다. 먼저 드라이런으로 확인하세요.")
         return True
 
@@ -595,17 +783,17 @@ class CSTVibeGUI:
         }
 
     def run_dry(self) -> None:
-        if not self.sync_wizard_parameters_to_json():
+        if self.auto_sync_wizard.get() and not self.sync_wizard_parameters_to_json():
             return
         self.run_plan(dry_run=True)
 
     def run_cst(self) -> None:
-        if not self.sync_wizard_parameters_to_json():
+        if self.auto_sync_wizard.get() and not self.sync_wizard_parameters_to_json():
             return
         self.run_plan(dry_run=False)
 
     def run_diagnostics(self) -> None:
-        if not self.sync_wizard_parameters_to_json():
+        if self.auto_sync_wizard.get() and not self.sync_wizard_parameters_to_json():
             return
         self.run_plan(
             dry_run=False,
@@ -614,8 +802,9 @@ class CSTVibeGUI:
         )
 
     def run_rf_package_dry(self) -> None:
-        if not self.apply_wizard_plan():
-            return
+        if self.auto_sync_wizard.get():
+            if not self.apply_wizard_plan():
+                return
         self.run_plan(
             dry_run=True,
             mode_label="RF Package Dry Run",
@@ -623,8 +812,9 @@ class CSTVibeGUI:
         )
 
     def run_rf_package_cst(self) -> None:
-        if not self.apply_wizard_plan():
-            return
+        if self.auto_sync_wizard.get():
+            if not self.apply_wizard_plan():
+                return
         self.run_plan(
             dry_run=False,
             mode_label="RF Package CST Run",
