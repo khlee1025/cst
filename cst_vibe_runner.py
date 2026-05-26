@@ -258,11 +258,19 @@ class CSTSession:
         )
 
     def store_parameter(self, name: str, value: Any) -> None:
+        print(f"[param] {name} = {value}")
         if self.dry_run:
             print(f"[dry-run] StoreParameter {name} = {value}")
             return
         self._require_mws()
-        self.mws.StoreParameter(str(name), str(value))
+        try:
+            self.mws.StoreParameter(str(name), str(value))
+        except Exception as exc:
+            raise PlanError(
+                "CST StoreParameter failed. The parameter was not applied.\n"
+                f"name={name!r}, value={value!r}\n"
+                f"Original error:\n{exc}"
+            ) from exc
 
     def rebuild(self) -> None:
         if self.dry_run:

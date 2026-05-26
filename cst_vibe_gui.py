@@ -391,6 +391,8 @@ class CSTVibeGUI:
         self.set_status("JSON을 보기 좋게 정렬했습니다.")
 
     def validate_current_plan(self) -> None:
+        if not self.sync_wizard_parameters_to_json():
+            return
         try:
             plan = json.loads(self.current_plan_text())
         except json.JSONDecodeError as exc:
@@ -462,8 +464,8 @@ class CSTVibeGUI:
         if self.apply_wizard_plan():
             self.run_dry()
 
-    def build_wizard_plan(self) -> dict[str, object]:
-        values = {
+    def wizard_values(self) -> dict[str, str]:
+        return {
             "p": self.wizard_p.get().strip(),
             "sub_t": self.wizard_sub_t.get().strip(),
             "copper_t": self.wizard_copper_t.get().strip(),
@@ -473,6 +475,45 @@ class CSTVibeGUI:
             "epsilon": self.wizard_epsilon.get().strip(),
             "tand": self.wizard_tand.get().strip(),
         }
+
+    def sync_wizard_parameters_to_json(self) -> bool:
+        try:
+            values = self.wizard_values()
+            for key, value in values.items():
+                if not value:
+                    raise ValueError(f"{key} 값이 비어 있습니다.")
+            numeric = {key: float(value) for key, value in values.items()}
+            if numeric["p"] <= 0:
+                raise ValueError("p는 0보다 커야 합니다.")
+            if numeric["sub_t"] <= 0 or numeric["copper_t"] <= 0:
+                raise ValueError("sub_t와 copper_t는 0보다 커야 합니다.")
+            if numeric["patch_w"] <= 0:
+                raise ValueError("patch_w는 0보다 커야 합니다.")
+            if numeric["patch_w"] >= numeric["p"]:
+                raise ValueError("patch_w는 p보다 작아야 합니다. 패치가 유닛셀 밖으로 나갑니다.")
+            if numeric["fmax"] <= numeric["fmin"]:
+                raise ValueError("fmax는 fmin보다 커야 합니다.")
+
+            plan = json.loads(self.current_plan_text())
+            if not isinstance(plan, dict):
+                raise ValueError("JSON 최상위는 object여야 합니다.")
+            params = plan.setdefault("parameters", {})
+            if not isinstance(params, dict):
+                raise ValueError("parameters는 object여야 합니다.")
+            params.update(values)
+            self.plan_text.delete("1.0", END)
+            self.plan_text.insert("1.0", json.dumps(plan, ensure_ascii=False, indent=2) + "\n")
+            self.set_status("설계 마법사 파라미터를 JSON에 자동 반영했습니다.")
+            return True
+        except json.JSONDecodeError as exc:
+            messagebox.showerror("JSON 오류", f"{exc.msg}\nline {exc.lineno}, column {exc.colno}")
+            return False
+        except ValueError as exc:
+            messagebox.showerror("설계값 오류", str(exc))
+            return False
+
+    def build_wizard_plan(self) -> dict[str, object]:
+        values = self.wizard_values()
         for key, value in values.items():
             if not value:
                 raise ValueError(f"{key} 값이 비어 있습니다.")
@@ -554,12 +595,18 @@ class CSTVibeGUI:
         }
 
     def run_dry(self) -> None:
+        if not self.sync_wizard_parameters_to_json():
+            return
         self.run_plan(dry_run=True)
 
     def run_cst(self) -> None:
+        if not self.sync_wizard_parameters_to_json():
+            return
         self.run_plan(dry_run=False)
 
     def run_diagnostics(self) -> None:
+        if not self.sync_wizard_parameters_to_json():
+            return
         self.run_plan(
             dry_run=False,
             mode_label="Step Diagnose",
@@ -567,6 +614,8 @@ class CSTVibeGUI:
         )
 
     def run_rf_package_dry(self) -> None:
+        if not self.apply_wizard_plan():
+            return
         self.run_plan(
             dry_run=True,
             mode_label="RF Package Dry Run",
@@ -574,6 +623,8 @@ class CSTVibeGUI:
         )
 
     def run_rf_package_cst(self) -> None:
+        if not self.apply_wizard_plan():
+            return
         self.run_plan(
             dry_run=False,
             mode_label="RF Package CST Run",
