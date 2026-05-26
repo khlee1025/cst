@@ -1169,7 +1169,7 @@ class CSTVibeGUI:
             False,
             plan_text=json.dumps(plan, ensure_ascii=False, indent=2) + "\n",
             mode_label="CST 해석 + 결과 보기",
-            extra_args=["--run-dir", str(run_dir), "--store-parameters", "--keep-expressions"],
+            extra_args=["--run-dir", str(run_dir)],
         )
 
     def collect_sparams_dialog(self) -> None:

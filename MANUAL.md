@@ -126,7 +126,7 @@ CST를 열지 않고 검증합니다.
 
 ### 3. CST 해석 + 결과 보기
 
-메인 3단계 버튼입니다. CST를 열고 형상/경계조건/Floquet port를 만든 뒤 기본 Frequency Solver Start를 실행합니다.
+메인 3단계 버튼입니다. CST를 열고 형상/경계조건/Floquet port를 만든 뒤 CST의 `Setup Solver -> Start`에 해당하는 `Solver.Start`를 실행합니다.
 
 해석이 끝나면 `exports/sparameters.s2p`로 export하고, 오른쪽 `S11/S21 결과` 탭에 요약을 보여줍니다.
 

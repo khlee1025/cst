@@ -685,8 +685,10 @@ def macro_floquet_port(command: dict[str, Any]) -> tuple[str, str]:
 
 def macro_solver_start(command: dict[str, Any]) -> tuple[str, str]:
     solver = command.get("solver")
-    if solver == "frequency":
+    if solver == "frequency_direct":
         return "start frequency solver", "FDSolver.Start"
+    if solver == "frequency":
+        return "start solver", "Solver.Start"
     if solver == "time":
         return "start time solver", "Solver.Start"
     return "start solver", "Solver.Start"
