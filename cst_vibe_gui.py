@@ -197,8 +197,7 @@ class CSTVibeGUI:
         buttons = [
             ("1. 대사 적용", self.apply_request_to_wizard, "Accent.TButton"),
             ("2. 실행 전 확인", self.preflight_check, "TButton"),
-            ("3. CST 실행 + 결과폴더", self.run_rf_package_cst, "Accent.TButton"),
-            ("배치 스윕", self.open_sweep_dialog, "TButton"),
+            ("3. CST에 형상 만들기", self.run_geometry_in_cst, "Accent.TButton"),
             ("CST 2025 연결 테스트", self.run_connection_test, "TButton"),
             ("문제 진단", self.run_diagnostics, "TButton"),
         ]
@@ -214,8 +213,10 @@ class CSTVibeGUI:
         ttk.Button(utility, text="숫자 직접 입력", command=self.open_wizard).grid(row=0, column=0, sticky="ew", padx=(0, 4))
         ttk.Button(utility, text="JSON 보기", command=lambda: self.notebook.select(1)).grid(row=0, column=1, sticky="ew", padx=4)
         ttk.Button(utility, text="대사 -> JSON", command=self.convert_request_with_llm).grid(row=0, column=2, sticky="ew", padx=(4, 0))
-        ttk.Button(utility, text="리포트 저장", command=self.save_output_report).grid(row=1, column=0, sticky="ew", padx=(0, 4), pady=(6, 0))
-        ttk.Button(utility, text="출력 복사", command=self.copy_output).grid(row=1, column=1, sticky="ew", padx=4, pady=(6, 0))
+        ttk.Button(utility, text="결과폴더 저장", command=self.run_rf_package_cst).grid(row=1, column=0, sticky="ew", padx=(0, 4), pady=(6, 0))
+        ttk.Button(utility, text="배치 스윕", command=self.open_sweep_dialog).grid(row=1, column=1, sticky="ew", padx=4, pady=(6, 0))
+        ttk.Button(utility, text="리포트 저장", command=self.save_output_report).grid(row=1, column=2, sticky="ew", padx=(4, 0), pady=(6, 0))
+        ttk.Button(utility, text="출력 복사", command=self.copy_output).grid(row=2, column=0, sticky="ew", padx=(0, 4), pady=(6, 0))
 
     def build_result_panel(self, parent: ttk.Frame) -> None:
         top = ttk.Frame(parent, style="Panel.TFrame")
@@ -365,7 +366,7 @@ class CSTVibeGUI:
             self.notebook.select(0)
             changed = ", ".join(f"{key}={value}" for key, value in found.items()) or "기본값 유지"
             self.append_output(f"[flow] 대사를 기본 유닛셀 값에 반영했습니다: {changed}\n")
-            self.append_output("[flow] 다음은 '2. 실행 전 확인' 또는 바로 '3. CST 실행 + 결과폴더'를 누르면 됩니다.\n\n")
+            self.append_output("[flow] 다음은 '2. 실행 전 확인' 또는 바로 '3. CST에 형상 만들기'를 누르면 됩니다.\n\n")
             self.status.set("대사 적용 완료")
 
     def extract_request_values(self, text: str) -> dict[str, str]:
@@ -1068,6 +1069,16 @@ class CSTVibeGUI:
         if not self.sync_wizard_parameters_if_needed():
             return
         self.run_plan(False, mode_label="문제 진단", extra_args=["--continue-on-error", "--no-project-save"])
+
+    def run_geometry_in_cst(self) -> None:
+        if not self.sync_wizard_parameters_if_needed():
+            return
+        if not self.rf_check(show_only=False):
+            self.append_output("[stop] RF Check에 error가 있어 실행하지 않았습니다.\n")
+            return
+        self.append_output("[flow] CST에 형상만 만들고 저장은 건너뜁니다.\n")
+        self.append_output("[flow] 형상이 뜨면 CST 안에서 Setup Solver의 Start를 눌러 해석하세요.\n\n")
+        self.run_plan(False, mode_label="CST에 형상 만들기", extra_args=["--continue-on-error", "--no-project-save"])
 
     def run_rf_package_cst(self) -> None:
         if not self.sync_wizard_parameters_if_needed():
