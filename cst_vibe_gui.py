@@ -17,6 +17,7 @@ import copy
 import re
 import subprocess
 import sys
+import tempfile
 import threading
 from pathlib import Path
 from tkinter import BOTH, END, LEFT, RIGHT, X, BooleanVar, StringVar, Tk, Toplevel
@@ -29,7 +30,7 @@ APP_DIR = Path(__file__).resolve().parent
 RUNNER = APP_DIR / "cst_vibe_runner.py"
 EXAMPLE_PLAN = APP_DIR / "examples" / "02_mesh_frame_unitcell.json"
 PROMPT_FILE = APP_DIR / "prompt_for_local_llm.md"
-TEMP_PLAN = APP_DIR / ".cst_vibe_gui_last_plan.json"
+RUNTIME_TMP = Path(tempfile.gettempdir()) / "cst_vibe_runner"
 LLM_CONFIG = APP_DIR / "cst_llm_config.json"
 
 
@@ -407,7 +408,7 @@ class CSTVibeGUI:
             base_plan = self.current_plan()
             parameter = self.sweep_parameter.get().strip()
             values = self.parse_sweep_values()
-            commands = self.build_sweep_commands(base_plan, parameter, values, dry_run=dry_run)
+            commands, cleanup_files = self.build_sweep_commands(base_plan, parameter, values, dry_run=dry_run)
         except Exception as exc:
             messagebox.showerror("스윕 준비 실패", str(exc))
             return False
@@ -421,11 +422,11 @@ class CSTVibeGUI:
         mode = "스윕 드라이런" if dry_run else "스윕 실행 + 결과폴더"
         self.status.set(f"{mode} 중...")
         self.append_output(f"[sweep] parameter={parameter}, values={', '.join(values)}\n\n")
-        threading.Thread(target=self.sweep_worker, args=(commands, mode), daemon=True).start()
+        threading.Thread(target=self.sweep_worker, args=(commands, mode, cleanup_files), daemon=True).start()
         self.root.after(80, self.drain_output_queue)
         return True
 
-    def build_sweep_commands(self, base_plan: dict, parameter: str, values: list[str], dry_run: bool) -> list[list[str]]:
+    def build_sweep_commands(self, base_plan: dict, parameter: str, values: list[str], dry_run: bool) -> tuple[list[list[str]], list[Path]]:
         if not parameter:
             raise ValueError("스윕 파라미터 이름이 비어 있습니다.")
         params = base_plan.get("parameters")
@@ -435,6 +436,7 @@ class CSTVibeGUI:
             raise ValueError(f"현재 JSON parameters에 '{parameter}'가 없습니다.")
 
         commands: list[list[str]] = []
+        cleanup_files: list[Path] = []
         for index, value in enumerate(values, start=1):
             plan = copy.deepcopy(base_plan)
             plan_params = plan.setdefault("parameters", {})
@@ -450,8 +452,11 @@ class CSTVibeGUI:
                 raise ValueError("project는 object여야 합니다.")
             project["save_as"] = f"output/{plan['design_id']}.cst"
 
-            plan_path = APP_DIR / f".cst_vibe_gui_sweep_{index:03d}_{self.safe_slug(parameter)}_{value_slug}.json"
-            plan_path.write_text(json.dumps(plan, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            plan_path = self.write_runtime_plan(
+                json.dumps(plan, ensure_ascii=False, indent=2) + "\n",
+                f"sweep_{index:03d}_{self.safe_slug(parameter)}_{value_slug}",
+            )
+            cleanup_files.append(plan_path)
             cmd = [sys.executable, str(RUNNER), str(plan_path), "--prog-id", self.prog_id.get().strip(), "--package-run"]
             if dry_run:
                 cmd.append("--dry-run")
@@ -459,9 +464,9 @@ class CSTVibeGUI:
                 cmd.append("--visible")
             cmd.append("--continue-on-error")
             commands.append(cmd)
-        return commands
+        return commands, cleanup_files
 
-    def sweep_worker(self, commands: list[list[str]], mode: str) -> None:
+    def sweep_worker(self, commands: list[list[str]], mode: str, cleanup_files: list[Path]) -> None:
         worst_code = 0
         try:
             for index, cmd in enumerate(commands, start=1):
@@ -473,6 +478,7 @@ class CSTVibeGUI:
             worst_code = max(worst_code, 1)
             self.output_queue.put(f"\n[스윕 실패] {exc}\n")
         finally:
+            self.cleanup_temp_files(cleanup_files)
             self.output_queue.put(f"\n[{mode} 전체 종료 코드: {worst_code}]\n")
             self.output_queue.put(None)
 
@@ -794,7 +800,7 @@ class CSTVibeGUI:
     def run_diagnostics(self) -> None:
         if not self.sync_wizard_parameters_if_needed():
             return
-        self.run_plan(False, mode_label="문제 진단", extra_args=["--continue-on-error"])
+        self.run_plan(False, mode_label="문제 진단", extra_args=["--continue-on-error", "--no-project-save"])
 
     def run_rf_package_cst(self) -> None:
         if not self.sync_wizard_parameters_if_needed():
@@ -817,12 +823,12 @@ class CSTVibeGUI:
         text = self.plan_text.get("1.0", "end-1c") if plan_text is None else plan_text
         try:
             json.loads(text)
-            TEMP_PLAN.write_text(text, encoding="utf-8")
+            temp_plan = self.write_runtime_plan(text, "single_run")
         except Exception as exc:
             messagebox.showerror("실행 준비 실패", str(exc))
             return
 
-        cmd = [sys.executable, str(RUNNER), str(TEMP_PLAN), "--prog-id", self.prog_id.get().strip()]
+        cmd = [sys.executable, str(RUNNER), str(temp_plan), "--prog-id", self.prog_id.get().strip()]
         if dry_run:
             cmd.append("--dry-run")
         elif self.visible.get():
@@ -834,17 +840,37 @@ class CSTVibeGUI:
         self.append_output(f"\n$ {' '.join(cmd)}\n\n")
         self.notebook.select(0)
         self.status.set(f"{mode_label or '실행'} 중...")
-        threading.Thread(target=self.worker, args=(cmd, mode_label or "실행"), daemon=True).start()
+        threading.Thread(target=self.worker, args=(cmd, mode_label or "실행", [temp_plan]), daemon=True).start()
         self.root.after(80, self.drain_output_queue)
 
-    def worker(self, cmd: list[str], mode: str) -> None:
+    def worker(self, cmd: list[str], mode: str, cleanup_files: list[Path]) -> None:
         try:
             code = self.run_subprocess_to_queue(cmd)
             self.output_queue.put(f"\n[{mode} 종료 코드: {code}]\n")
         except Exception as exc:
             self.output_queue.put(f"\n[실행 실패] {exc}\n")
         finally:
+            self.cleanup_temp_files(cleanup_files)
             self.output_queue.put(None)
+
+    def write_runtime_plan(self, text: str, prefix: str) -> Path:
+        RUNTIME_TMP.mkdir(parents=True, exist_ok=True)
+        fd, path_text = tempfile.mkstemp(prefix=f"{prefix}_", suffix=".json", dir=str(RUNTIME_TMP))
+        path = Path(path_text)
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(text)
+        return path
+
+    def cleanup_temp_files(self, paths: list[Path]) -> None:
+        for path in paths:
+            try:
+                path.unlink(missing_ok=True)
+            except Exception:
+                pass
+        try:
+            RUNTIME_TMP.rmdir()
+        except Exception:
+            pass
 
     def run_subprocess_to_queue(self, cmd: list[str]) -> int:
         proc = subprocess.Popen(

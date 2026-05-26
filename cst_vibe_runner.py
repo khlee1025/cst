@@ -270,11 +270,19 @@ def prepare_run_package(plan: dict[str, Any], args: argparse.Namespace) -> Path 
 
 
 class CSTSession:
-    def __init__(self, dry_run: bool, prog_id: str, visible: bool, continue_on_error: bool = False) -> None:
+    def __init__(
+        self,
+        dry_run: bool,
+        prog_id: str,
+        visible: bool,
+        continue_on_error: bool = False,
+        skip_saves: bool = False,
+    ) -> None:
         self.dry_run = dry_run
         self.prog_id = prog_id
         self.visible = visible
         self.continue_on_error = continue_on_error
+        self.skip_saves = skip_saves
         self.errors: list[str] = []
         self.cst = None
         self.mws = None
@@ -427,6 +435,9 @@ class CSTSession:
         self.mws.Rebuild()
 
     def save(self) -> None:
+        if self.skip_saves:
+            print("[save] Save skipped by --no-project-save.")
+            return
         if self.dry_run:
             print("[dry-run] Save")
             return
@@ -435,6 +446,9 @@ class CSTSession:
 
     def save_as(self, path: Any) -> None:
         resolved = Path(str(path)).resolve()
+        if self.skip_saves:
+            print(f"[save] SaveAs skipped by --no-project-save: {resolved}")
+            return
         if self.dry_run:
             print(f"[dry-run] SaveAs {resolved}")
             return
@@ -734,7 +748,7 @@ def run_plan(plan: dict[str, Any], args: argparse.Namespace) -> None:
     if not isinstance(project, dict):
         raise PlanError("project must be an object.")
 
-    session = CSTSession(args.dry_run, args.prog_id, args.visible, args.continue_on_error)
+    session = CSTSession(args.dry_run, args.prog_id, args.visible, args.continue_on_error, args.no_project_save)
     session.connect_project(project)
 
     parameters = plan.get("parameters", {})
@@ -755,7 +769,9 @@ def run_plan(plan: dict[str, Any], args: argparse.Namespace) -> None:
             session.store_parameter(str(name), value)
     execute_commands(session, commands)
 
-    if project.get("save_as"):
+    if args.no_project_save:
+        print("[save] Project save skipped by --no-project-save.")
+    elif project.get("save_as"):
         session.save_as(project["save_as"])
     elif project.get("save", False):
         session.save()
@@ -834,6 +850,11 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         "--store-parameters",
         action="store_true",
         help="Also create CST parameters with StoreParameter. Off by default to avoid CST New Parameter popups.",
+    )
+    parser.add_argument(
+        "--no-project-save",
+        action="store_true",
+        help="Run commands without saving a CST project file. Useful for diagnostics.",
     )
     return parser.parse_args(argv)
 
