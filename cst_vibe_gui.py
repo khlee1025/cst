@@ -22,7 +22,7 @@ from tkinter import ttk
 
 APP_DIR = Path(__file__).resolve().parent
 RUNNER = APP_DIR / "cst_vibe_runner.py"
-EXAMPLE_PLAN = APP_DIR / "examples" / "shielding_unitcell_plan.json"
+EXAMPLE_PLAN = APP_DIR / "examples" / "02_patch_unitcell_no_ports.json"
 PROMPT_FILE = APP_DIR / "prompt_for_local_llm.md"
 TEMP_PLAN = APP_DIR / ".cst_vibe_gui_last_plan.json"
 

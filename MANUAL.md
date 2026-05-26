@@ -46,18 +46,24 @@ cd cst
 ```text
 README.md
 MANUAL.md
+DESIGN_GUIDE.md
 cst_vibe_gui.py
 cst_vibe_runner.py
 prompt_for_local_llm.md
 requirements.txt
 examples/
-  shielding_unitcell_plan.json
+  00_connection_test.json
+  01_units_only.json
+  02_patch_unitcell_no_ports.json
+  03_patch_unitcell_with_ports_experimental.json
 ```
 
 가장 중요한 파일은 두 개입니다.
 
 - `cst_vibe_gui.py`: 화면으로 쓰는 GUI 프로그램
 - `cst_vibe_runner.py`: JSON 명령서를 실행하는 핵심 프로그램
+
+초심자는 [DESIGN_GUIDE.md](./DESIGN_GUIDE.md)를 먼저 보고, `examples/02_patch_unitcell_no_ports.json`부터 실행하는 것을 추천합니다.
 
 ## 4. CST 없이 먼저 테스트하기
 
@@ -66,7 +72,7 @@ CST가 없어도 드라이런으로 확인할 수 있습니다.
 PowerShell에서 프로젝트 폴더로 이동한 뒤 실행합니다.
 
 ```powershell
-python .\cst_vibe_runner.py .\examples\shielding_unitcell_plan.json --dry-run
+python .\cst_vibe_runner.py .\examples\02_patch_unitcell_no_ports.json --dry-run
 ```
 
 정상이라면 이런 문구들이 출력됩니다.
@@ -159,7 +165,7 @@ python -m pip install pyyaml
 실제 실행은 이렇게 합니다.
 
 ```powershell
-python .\cst_vibe_runner.py .\examples\shielding_unitcell_plan.json --visible
+python .\cst_vibe_runner.py .\examples\02_patch_unitcell_no_ports.json --visible
 ```
 
 GUI로 실행하려면:

@@ -6,16 +6,22 @@
 
 처음 쓰는 경우에는 [MANUAL.md](./MANUAL.md)를 먼저 보면 됩니다. 다운로드, GUI 실행, 로컬 LLM 사용법, CST 없이 테스트하는 방법까지 순서대로 정리해두었습니다.
 
+초심자 설계 흐름은 [DESIGN_GUIDE.md](./DESIGN_GUIDE.md)를 보면 됩니다. 포트 없이 형상부터 만드는 안전한 순서와 파라미터 규칙을 정리했습니다.
+
 ## 지금 들어있는 것
 
 ```text
 MANUAL.md                         # 친절한 사용 설명서
+DESIGN_GUIDE.md                   # 초심자용 설계 가이드
 cst_vibe_gui.py                    # GUI 실행 파일
 cst_vibe_runner.py                 # JSON/YAML 명령서 실행기
 prompt_for_local_llm.md            # 로컬 LLM에 넣을 프롬프트
 requirements.txt                   # CST 실연동에 필요한 패키지
 examples/
-  shielding_unitcell_plan.json     # 차폐 유닛셀 예제
+  00_connection_test.json          # CST 연결 확인
+  01_units_only.json               # 단위 설정 확인
+  02_patch_unitcell_no_ports.json  # 초심자 기본 형상 예제
+  03_patch_unitcell_with_ports_experimental.json # 포트 실험 예제
 ```
 
 예전에 있던 sweep/분석용 파일들은 정리했습니다. 지금은 CST Vibe Runner만 남겨서 바로 테스트하기 쉽게 만들었습니다.
@@ -46,7 +52,7 @@ cd cst
 CST가 없어도 프로그램 구조와 JSON 변환 결과는 확인할 수 있습니다.
 
 ```powershell
-python .\cst_vibe_runner.py .\examples\shielding_unitcell_plan.json --dry-run
+python .\cst_vibe_runner.py .\examples\02_patch_unitcell_no_ports.json --dry-run
 ```
 
 정상이라면 `With Material`, `With Brick`, `Solver.FrequencyRange` 같은 CST 매크로가 출력됩니다.
@@ -78,7 +84,7 @@ JSON만 쓸 거면 `pyyaml`은 없어도 됩니다.
 실제 실행:
 
 ```powershell
-python .\cst_vibe_runner.py .\examples\shielding_unitcell_plan.json --visible
+python .\cst_vibe_runner.py .\examples\02_patch_unitcell_no_ports.json --visible
 ```
 
 GUI 실행:
@@ -108,7 +114,7 @@ python .\cst_vibe_gui.py
 {
   "project": {
     "mode": "new",
-    "save_as": "output/shielding_unitcell_baseline.cst"
+    "save_as": "output/patch_unitcell_no_ports.cst"
   },
   "parameters": {
     "p": "10",
@@ -140,7 +146,7 @@ python .\cst_vibe_gui.py
 }
 ```
 
-더 완성된 예제는 `examples/shielding_unitcell_plan.json`에 있습니다.
+더 완성된 초심자 예제는 `examples/02_patch_unitcell_no_ports.json`에 있습니다.
 
 ## 지원하는 명령
 

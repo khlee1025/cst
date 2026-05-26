@@ -1,14 +1,13 @@
 {
   "project": {
     "mode": "new",
-    "save_as": "output/shielding_unitcell_baseline.cst"
+    "save_as": "output/patch_unitcell_no_ports.cst"
   },
   "parameters": {
     "p": "10",
     "sub_t": "0.8",
     "copper_t": "0.035",
     "patch_w": "7.2",
-    "gap": "0.4",
     "fmin": "1",
     "fmax": "18"
   },
@@ -23,15 +22,6 @@
       "op": "frequency_range",
       "fmin": "fmin",
       "fmax": "fmax"
-    },
-    {
-      "op": "boundary",
-      "xmin": "unit cell",
-      "xmax": "unit cell",
-      "ymin": "unit cell",
-      "ymax": "unit cell",
-      "zmin": "open",
-      "zmax": "open"
     },
     {
       "op": "material",
