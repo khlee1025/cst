@@ -181,7 +181,7 @@ class CSTSession:
                 "python -m pip install pywin32"
             ) from exc
 
-        self.cst = win32com.client.Dispatch(self.prog_id)
+        self.cst = self.dispatch_cst(win32com)
         if self.visible:
             try:
                 self.cst.Visible = True
@@ -196,6 +196,35 @@ class CSTSession:
             self.mws = self.cst.NewMWS()
         else:
             raise PlanError("project.mode must be 'new' or 'open'.")
+
+    def dispatch_cst(self, win32com: Any) -> Any:
+        candidates = [self.prog_id]
+        for prog_id in (
+            "CSTStudio.Application.2025",
+            "CSTStudio.Application",
+            "CSTStudio.Application.2024",
+            "CSTStudio.Application.2023",
+        ):
+            if prog_id not in candidates:
+                candidates.append(prog_id)
+
+        errors = []
+        for prog_id in candidates:
+            try:
+                cst = win32com.client.Dispatch(prog_id)
+            except Exception as exc:
+                errors.append(f"{prog_id}: {exc}")
+                continue
+            self.prog_id = prog_id
+            print(f"[cst] Connected ProgID: {prog_id}")
+            return cst
+
+        raise PlanError(
+            "Could not start CST through COM. CST 2025 is the default, but no "
+            "registered CST COM ProgID responded.\n"
+            "Tried:\n- "
+            + "\n- ".join(errors)
+        )
 
     def add_history(self, name: str, code: str) -> None:
         name_text = str(name).strip()
@@ -673,8 +702,8 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     )
     parser.add_argument(
         "--prog-id",
-        default="CSTStudio.Application",
-        help="CST COM ProgID. Default: CSTStudio.Application",
+        default="CSTStudio.Application.2025",
+        help="CST COM ProgID. Default: CSTStudio.Application.2025",
     )
     return parser.parse_args(argv)
 

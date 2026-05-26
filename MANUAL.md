@@ -1,313 +1,295 @@
 # CST Vibe Runner 사용 설명서
 
-이 설명서는 CST가 없어도 먼저 프로그램을 확인하고, 나중에 CST가 있는 PC에서 실제로 실행하는 흐름까지 안내합니다.
+이 문서는 실제 사용 순서 중심 설명서입니다. CST나 JSON을 잘 몰라도 아래 순서대로 하면 됩니다.
 
-## 1. 이 프로그램이 하는 일
+## 1. 프로그램 열기
 
-CST Vibe Runner는 자연어를 직접 이해하는 프로그램이 아닙니다.
-
-대신 흐름을 이렇게 나눕니다.
-
-```text
-내가 한국어로 원하는 작업을 씀
--> 로컬 LLM이 JSON 명령서로 번역
--> CST Vibe Runner가 JSON을 읽음
--> CST에 실행할 매크로/COM 명령 생성
--> CST가 있는 PC에서는 실제 실행
-```
-
-즉, LLM은 "번역기" 역할이고, 이 프로그램은 "CST 실행기" 역할입니다.
-
-## 2. 다운로드 방법
-
-GitHub 화면에서 받는 방법:
-
-1. 저장소로 들어갑니다.
-2. 브랜치가 `master`인지 확인합니다.
-3. 오른쪽 위 `Code` 버튼을 누릅니다.
-4. `Download ZIP`을 누릅니다.
-5. 받은 ZIP 파일의 압축을 풉니다.
-
-바로 다운로드:
-
-[Download ZIP](https://github.com/khlee1025/cst/archive/refs/heads/master.zip)
-
-Git으로 받는 방법:
-
-```powershell
-git clone https://github.com/khlee1025/cst.git
-cd cst
-```
-
-## 3. 폴더 안에 있어야 하는 파일
-
-압축을 풀거나 Git으로 받으면 아래 파일들이 있어야 합니다.
-
-```text
-README.md
-MANUAL.md
-DESIGN_GUIDE.md
-DEBUG_WORKFLOW.md
-RF_RUN_PACKAGE.md
-cst_vibe_gui.py
-cst_vibe_runner.py
-prompt_for_local_llm.md
-requirements.txt
-examples/
-  00_connection_test.json
-  01_units_only.json
-  02_patch_unitcell_no_ports.json
-  03_patch_unitcell_with_ports_experimental.json
-```
-
-가장 중요한 파일은 두 개입니다.
-
-- `cst_vibe_gui.py`: 화면으로 쓰는 GUI 프로그램
-- `cst_vibe_runner.py`: JSON 명령서를 실행하는 핵심 프로그램
-
-초심자는 [DESIGN_GUIDE.md](./DESIGN_GUIDE.md)를 먼저 보고, `examples/02_patch_unitcell_no_ports.json`부터 실행하는 것을 추천합니다.
-
-## 4. CST 없이 먼저 테스트하기
-
-CST가 없어도 드라이런으로 확인할 수 있습니다.
-
-PowerShell에서 프로젝트 폴더로 이동한 뒤 실행합니다.
-
-```powershell
-python .\cst_vibe_runner.py .\examples\02_patch_unitcell_no_ports.json --dry-run
-```
-
-정상이라면 이런 문구들이 출력됩니다.
-
-```text
-[dry-run] COM Dispatch: CSTStudio.Application
---- AddToHistory: set units ---
-With Units
-...
---- AddToHistory: create brick substrate ---
-With Brick
-...
-```
-
-이 출력이 보이면 다음 단계까지 성공한 것입니다.
-
-```text
-JSON 파일 읽기
--> 명령서 해석
--> CST에 보낼 매크로 생성
-```
-
-아직 CST가 없기 때문에 실제 시뮬레이션 실행만 확인하지 못한 상태입니다.
-
-## 5. GUI 실행하기
-
-GUI는 이렇게 실행합니다.
+압축을 푼 폴더에서 PowerShell을 열고 실행합니다.
 
 ```powershell
 python .\cst_vibe_gui.py
 ```
 
-GUI가 열리면 다음 순서로 쓰면 됩니다.
+창 이름이 `CST Vibe Runner - Simple Mode`로 뜨면 정상입니다.
 
-1. CST가 있는 PC라면 먼저 `CST 연동 테스트`를 누릅니다.
-2. 연동 테스트가 종료코드 0이면 CST COM 연결은 된 것입니다.
-3. 초심자는 왼쪽 `설계 마법사`에 숫자를 넣습니다.
-4. `형상 JSON 만들기`를 누릅니다.
-5. `드라이런`을 눌러 CST에 보낼 명령을 미리 확인합니다.
-6. CST가 있는 PC에서는 `CST 실행`을 누릅니다.
-7. 복잡한 설계가 필요할 때만 `LLM 프롬프트 복사`를 사용합니다.
+## 2. 첫 화면 구조
 
-`드라이런`, `CST 실행`, `Step Diagnose`, `RF Check`, `RF Package`, `RF Run`은 실행 직전에 설계 마법사 숫자를 JSON의 `parameters`에 자동 반영합니다.
-따라서 CST가 켜진 뒤 파라미터를 다시 손으로 입력할 필요가 없습니다.
+화면은 크게 세 부분입니다.
 
-복잡한 대사를 바로 JSON으로 바꾸고 싶으면 `LLM 설정 저장` -> `LLM 연결 테스트` -> `대사 -> JSON` 순서로 사용합니다.
-`대사 -> JSON` 변환 후에는 마법사 값 자동 반영이 자동으로 꺼져서 LLM이 만든 파라미터가 유지됩니다.
+- 왼쪽: 내가 원하는 설계를 말로 적는 곳
+- 왼쪽 버튼: 실제 작업 순서
+- 오른쪽: 실행 출력과 JSON 명령서 확인
 
-### 버튼 차이
+처음에는 오른쪽 JSON을 직접 고칠 필요가 거의 없습니다.
 
-- `CST 연동 테스트`: CST가 COM으로 열리는지만 확인합니다. 매크로는 넣지 않습니다.
-- `드라이런`: CST를 열지 않고 JSON이 어떤 CST 매크로로 바뀌는지 봅니다.
-- `CST 실행`: 실제 CST에 매크로를 넣고 실행합니다.
-- `형상 JSON 만들기`: LLM 없이 기본 유닛셀 JSON을 자동 생성합니다.
-- `Step Diagnose`: 실패해도 다음 명령을 계속 실행해서 통과/실패 지점을 모읍니다.
-- `Save Report`: 실행 출력 전체를 텍스트 리포트로 저장합니다.
-- `RF Check`: 현재 JSON의 기본 치수/위험 명령을 검사합니다.
-- `RF Package`: CST 없이 표준 run 폴더와 summary를 만듭니다.
-- `RF Run`: 표준 run 폴더를 만들고 CST 실행까지 시도합니다.
-- `LLM 연결 테스트`: OpenAI 호환 회사/로컬 LLM 서버 연결을 확인합니다.
-- `대사 -> JSON`: 요청 메모의 한국어 대사를 CST Vibe Runner JSON으로 변환합니다.
+## 3. CST 2025 기본값 확인
 
-처음 확인 순서는 `CST 연동 테스트` -> `드라이런` -> `CST 실행`이 가장 안전합니다.
+우측 상단 `설정`을 누릅니다.
 
-## 6. 로컬 LLM에 넣는 방법
-
-`prompt_for_local_llm.md` 파일을 열면 로컬 LLM용 지시문이 있습니다.
-
-로컬 LLM에는 보통 이렇게 넣으면 됩니다.
+`CST ProgID`가 아래처럼 되어 있으면 정상입니다.
 
 ```text
-아래 지시문을 따라 CST Vibe Runner용 JSON만 출력해줘.
-
-[prompt_for_local_llm.md 내용 붙여넣기]
-
-요청:
-주기 10 mm, FR4 두께 0.8 mm, 구리 패치 폭 7.2 mm인 차폐 유닛셀을 만들고 1-18 GHz로 설정해줘.
+CSTStudio.Application.2025
 ```
 
-중요한 점:
+`CST 화면 보이기`를 켜면 CST가 열리는 모습을 볼 수 있습니다. 처음 테스트할 때는 켜두는 것을 추천합니다.
 
-- 로컬 LLM 출력은 JSON만 나오게 하는 것이 좋습니다.
-- 설명 문장이나 markdown 코드블록이 섞이면 GUI에서 JSON 오류가 날 수 있습니다.
-- 오류가 나면 JSON 부분만 복사해서 다시 붙여넣으면 됩니다.
+## 4. LLM 없이 기본 유닛셀 만들기
 
-## 7. CST가 있는 PC에서 실제 실행하기
+가장 안정적인 첫 사용법입니다.
 
-CST 실제 연동에는 Windows COM 자동화가 필요합니다.
+1. `기본 유닛셀 값 입력` 클릭
+2. 숫자 입력
+3. `JSON 만들기` 클릭
+4. `실행 전 확인` 클릭
+5. 문제가 없으면 `CST 2025 연결 테스트`
+6. 연결이 되면 `CST 실행 + 결과폴더`
 
-먼저 패키지를 설치합니다.
+입력값 의미:
+
+| 이름 | 의미 | 단위 |
+| --- | --- | --- |
+| `p` | 유닛셀 주기 | mm |
+| `sub_t` | 기판 두께 | mm |
+| `copper_t` | 구리 두께 | mm |
+| `patch_w` | 패치 폭 | mm |
+| `fmin` | 시작 주파수 | GHz |
+| `fmax` | 끝 주파수 | GHz |
+| `epsilon` | 상대 유전율 | - |
+| `tand` | 손실탄젠트 | - |
+
+주의: 이 값들은 CST가 켜진 뒤 손으로 다시 넣는 값이 아닙니다. Python이 CST에 자동으로 넘깁니다.
+
+## 5. LLM으로 대사 입력하기
+
+회사/로컬 LLM 서버를 쓰려면 먼저 `설정`에서 아래를 맞춥니다.
+
+```text
+LLM Base URL
+Model
+API Key
+Max Tokens
+```
+
+그다음 순서:
+
+1. 왼쪽 요청 메모에 원하는 설계를 적습니다.
+2. `대사 -> JSON 만들기` 클릭
+3. 오른쪽 JSON 탭에서 결과를 한 번 확인
+4. `실행 전 확인`
+5. `CST 실행 + 결과폴더`
+
+좋은 대사 예시:
+
+```text
+10 mm 주기의 FR4 사각 패치 차폐 유닛셀을 만들어줘.
+기판 두께는 0.8 mm, 구리 두께는 0.035 mm, 패치 폭은 7.2 mm로 해줘.
+주파수는 1 GHz부터 18 GHz까지.
+포트는 만들지 말고 형상과 파라미터만 만들어줘.
+```
+
+나쁜 대사 예시:
+
+```text
+대충 좋은 차폐 구조 만들어줘.
+```
+
+LLM은 숫자와 조건이 구체적일수록 안정적입니다.
+
+## 6. 각 버튼이 하는 일
+
+### 대사 -> JSON 만들기
+
+요청 메모를 LLM에 보내서 CST JSON 명령서로 바꿉니다.
+
+OpenAI 패키지가 없다고 뜨면:
+
+```powershell
+python -m pip install openai
+```
+
+### 기본 유닛셀 값 입력
+
+LLM 없이 숫자 기반으로 안전한 기본 JSON을 만듭니다.
+
+초심자에게 가장 추천하는 시작점입니다.
+
+### 실행 전 확인
+
+CST를 열지 않고 검증합니다.
+
+확인하는 것:
+
+- JSON 형식
+- 파라미터 숫자 여부
+- 패치 폭과 주기 관계
+- 주파수 범위
+- CST로 보낼 매크로 내용
+
+여기서 `종료코드 0`이면 기본 문법은 통과한 것입니다.
+
+### CST 2025 연결 테스트
+
+CST COM 연결을 실제로 확인합니다. CST가 설치된 PC에서만 의미가 있습니다.
+
+실패하면 `문제 진단`을 눌러 자세한 원본 에러를 봅니다.
+
+### CST 실행 + 결과폴더
+
+실제 CST 실행과 결과 폴더 생성을 같이 합니다.
+
+결과는 `runs` 폴더에 생깁니다.
+
+### 문제 진단
+
+한 명령에서 실패해도 멈추지 않고 다음 명령까지 시도합니다. 어떤 명령에서 CST가 거부했는지 찾을 때 씁니다.
+
+### JSON 보기
+
+현재 만들어진 JSON 명령서를 오른쪽 탭에서 보여줍니다.
+
+### 리포트 저장
+
+출력창 내용을 `.txt` 파일로 저장합니다. 다른 LLM이나 사람에게 에러를 전달할 때 씁니다.
+
+### 출력 복사
+
+출력창 전체를 클립보드로 복사합니다.
+
+## 7. 종료코드 보는 법
+
+| 종료코드 | 뜻 |
+| --- | --- |
+| 0 | 정상 |
+| 1 | Python 또는 CST 실행 중 예상 못한 예외 |
+| 2 | JSON/입력/명령 검증 실패 또는 CST 명령 실패 |
+
+예를 들어 `실행 전 확인`에서 0이면 CST 없이도 JSON은 대체로 정상입니다.
+
+`CST 실행 + 결과폴더`에서 2가 나오면 출력창의 `Original error`를 봐야 합니다.
+
+## 8. 자주 나오는 문제
+
+### python이라고만 뜨고 실행이 안 됨
+
+PowerShell에서 현재 폴더가 다를 수 있습니다.
+
+```powershell
+dir
+```
+
+`cst_vibe_gui.py`가 있는 폴더에서 실행해야 합니다.
+
+### OpenAI 패키지가 필요하다고 뜸
+
+```powershell
+python -m pip install openai
+```
+
+또는 전체 설치:
+
+```powershell
+python -m pip install -r requirements.txt
+```
+
+### pywin32가 필요하다고 뜸
+
+CST를 실제로 실행하려면 필요합니다.
 
 ```powershell
 python -m pip install pywin32
 ```
 
-YAML 명령서도 쓰고 싶으면 추가 설치합니다.
+### CST가 안 열림
 
-```powershell
-python -m pip install pyyaml
-```
+먼저 CST 2025 CT를 직접 한 번 실행한 뒤 다시 시도하세요.
 
-실제 실행은 이렇게 합니다.
-
-```powershell
-python .\cst_vibe_runner.py .\examples\02_patch_unitcell_no_ports.json --visible
-```
-
-GUI로 실행하려면:
-
-```powershell
-python .\cst_vibe_gui.py
-```
-
-그 다음 `CST 실행` 버튼을 누릅니다.
-
-## 8. 자주 생기는 문제
-
-### `python` 명령을 찾을 수 없다고 나올 때
-
-Windows에서 Python이 설치되어 있지 않거나 PATH에 등록되지 않은 상태입니다.
-
-해결 방법:
-
-1. Python을 설치합니다.
-2. 설치할 때 `Add python.exe to PATH`를 체크합니다.
-3. PowerShell을 새로 열고 다시 실행합니다.
-
-확인 명령:
-
-```powershell
-python --version
-```
-
-### GUI가 안 열릴 때
-
-먼저 Python 기본 GUI 모듈인 `tkinter`가 있는지 확인합니다.
-
-```powershell
-python -c "import tkinter; print('tkinter ok')"
-```
-
-오류가 나면 Python 설치를 다시 확인해야 합니다.
-
-### `pywin32` 오류가 날 때
-
-CST 실제 실행에는 `pywin32`가 필요합니다.
-
-```powershell
-python -m pip install pywin32
-```
-
-CST 없이 `--dry-run`만 할 때는 `pywin32`가 없어도 됩니다.
-
-### JSON 오류가 날 때
-
-대부분 로컬 LLM 출력에 설명 문장이나 ```json 같은 코드블록 문자가 섞여서 생깁니다.
-
-해결 방법:
-
-1. `{` 로 시작해서 `}` 로 끝나는 JSON 부분만 복사합니다.
-2. GUI에 붙여넣습니다.
-3. `JSON 정렬`을 누릅니다.
-
-### CST에서 매크로가 안 먹을 때
-
-CST 버전마다 매크로 이름이나 옵션이 조금 다를 수 있습니다.
-
-이럴 때는:
-
-1. 먼저 `드라이런`으로 생성된 매크로를 확인합니다.
-2. CST에서 직접 기록한 매크로와 비교합니다.
-3. 지원하지 않는 기능은 `vba_history` 명령으로 직접 매크로를 넣습니다.
-
-`CST 실행`에서 종료코드 1 또는 2가 나오면 출력창의 `CST AddToHistory failed` 아래를 확인합니다.
-거기에 CST가 거절한 `History name`과 `Macro code`가 표시됩니다. 그 블록이 수정해야 할 부분입니다.
-
-### CST 2025에서 AddToHistory 인자 오류가 날 때
-
-예를 들어 이런 오류가 나올 수 있습니다.
+설정의 `CST ProgID` 기본값:
 
 ```text
-This method call requires a different number of arguments: 2 required, 0 provided
+CSTStudio.Application.2025
 ```
 
-이 경우는 두 가지 가능성이 있습니다.
-
-1. CST가 매크로 코드 안의 어떤 메서드를 잘못 해석한 경우
-2. CST 2025 COM이 `AddToHistory(name, code)` 인자 전달을 pywin32 기본 방식으로 받지 못한 경우
-
-현재 버전은 기본 호출이 실패하면 raw COM `Invoke` 방식으로 한 번 더 시도합니다.
-그래도 실패하면 출력창에 아래 정보가 나옵니다.
+러너가 자동으로 재시도하는 값:
 
 ```text
-normal call failed:
-raw COM Invoke failed:
-name='...'
-code_length=...
+CSTStudio.Application
+CSTStudio.Application.2024
+CSTStudio.Application.2023
 ```
 
-이 정보가 보이면 `name`이 비어있는지, `code_length`가 0인지 먼저 확인합니다.
-둘 다 정상인데도 실패하면 CST 버전의 COM 호출 방식 또는 매크로 문법 문제일 가능성이 큽니다.
+### AddToHistory 에러
 
-## 9. 추천 사용 순서
+이 도구는 CST 2025에서 `AddToHistory(name, code)`가 이상하게 전달되는 경우를 대비해 다른 COM 호출 방식도 자동 시도합니다.
 
-처음에는 아래 순서로 확인하는 것을 추천합니다.
+그래도 실패하면 `문제 진단`을 누르고 출력창을 저장해서 에러 메시지를 확인하세요.
+
+## 9. CST 없이 확인 가능한 것
+
+CST가 없어도 가능합니다.
 
 ```text
-1. ZIP 다운로드
-2. python .\cst_vibe_gui.py 로 GUI 열기
-3. 예제 JSON 그대로 드라이런
-4. prompt_for_local_llm.md를 로컬 LLM에 넣기
-5. 원하는 CST 작업을 JSON으로 변환
-6. GUI에 붙여넣고 JSON 정렬
-7. 드라이런
-8. CST가 있는 PC에서 실제 실행
+GUI 열기
+기본 유닛셀 JSON 생성
+LLM JSON 생성
+실행 전 확인
+드라이런 로그 확인
 ```
 
-## 10. 현재 버전의 한계
+CST가 있어야 가능합니다.
 
-이 버전은 첫 자동화용 뼈대입니다.
+```text
+CST 2025 연결 테스트
+CST 실행 + 결과폴더
+실제 .cst 프로젝트 저장
+실제 S-parameter export
+```
 
-잘하는 것:
+## 10. 결과 폴더
 
-- JSON 명령서를 읽기
-- CST 매크로 생성
-- GUI에서 붙여넣고 드라이런하기
-- 기본 유닛셀 형상 만들기
+`CST 실행 + 결과폴더`를 누르면 `runs` 아래에 실행별 폴더가 생깁니다.
 
-아직 조심해야 하는 것:
+```text
+runs/
+  날짜_시간_설계명/
+    input_plan.json
+    design_params.json
+    summary.json
+    cst_project.cst
+    exports/
+    logs/
+```
 
-- CST 버전별 매크로 차이
-- 포트/경계조건의 세부 설정
-- 실제 해석 결과 추출 자동화
-- 복잡한 형상의 완전 자동 생성
+파일 의미:
 
-그래서 처음에는 간단한 유닛셀부터 시작해서, CST에서 실제로 잘 먹는 명령을 하나씩 늘려가는 방식이 좋습니다.
+- `input_plan.json`: CST에 보낸 전체 명령서
+- `design_params.json`: 설계 파라미터만 정리한 파일
+- `summary.json`: 실행 요약
+- `cst_project.cst`: CST 프로젝트
+- `exports`: 나중에 S-parameter, csv 등을 넣을 위치
+
+## 11. 추천 작업 습관
+
+처음 구조를 만들 때:
+
+```text
+기본 유닛셀 값 입력 -> 실행 전 확인 -> CST 2025 연결 테스트
+```
+
+LLM 대사를 실험할 때:
+
+```text
+대사 -> JSON 만들기 -> 실행 전 확인 -> CST 실행 + 결과폴더
+```
+
+에러가 날 때:
+
+```text
+문제 진단 -> 리포트 저장 -> Original error 확인
+```
+
+좋은 결과가 나온 뒤:
+
+```text
+runs 폴더의 input_plan.json과 design_params.json을 Python 비교 모듈 입력으로 사용
+```

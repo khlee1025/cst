@@ -1,9 +1,11 @@
 #!/usr/bin/env python
 """
-Modern-ish desktop GUI for CST Vibe Runner.
+CST Vibe Runner GUI
 
-This intentionally uses only tkinter from the Python standard library so the
-first version can run on a CST workstation without extra GUI packages.
+Beginner-first GUI for:
+1. Korean request -> JSON through an OpenAI-compatible LLM
+2. JSON -> CST 2025 CT automation
+3. Standard RF run package generation for later CST/Python comparison
 """
 
 from __future__ import annotations
@@ -15,7 +17,7 @@ import subprocess
 import sys
 import threading
 from pathlib import Path
-from tkinter import BOTH, END, HORIZONTAL, LEFT, RIGHT, VERTICAL, X, Y, BooleanVar, StringVar, Tk
+from tkinter import BOTH, END, LEFT, RIGHT, X, BooleanVar, StringVar, Tk, Toplevel
 from tkinter import filedialog, messagebox
 from tkinter.scrolledtext import ScrolledText
 from tkinter import ttk
@@ -51,41 +53,42 @@ def extract_json_object(text: str) -> dict:
 class CSTVibeGUI:
     def __init__(self, root: Tk) -> None:
         self.root = root
-        self.root.title("CST Vibe Runner")
+        self.root.title("CST Vibe Runner - Simple Mode")
         self.root.geometry("1180x760")
         self.root.minsize(980, 640)
 
-        self.plan_path = StringVar(value=str(EXAMPLE_PLAN))
         self.status = StringVar(value="준비됨")
-        self.prog_id = StringVar(value="CSTStudio.Application")
+        self.prog_id = StringVar(value="CSTStudio.Application.2025")
         self.visible = BooleanVar(value=True)
-        self.wizard_p = StringVar(value="10")
-        self.wizard_sub_t = StringVar(value="0.8")
-        self.wizard_copper_t = StringVar(value="0.035")
-        self.wizard_patch_w = StringVar(value="7.2")
-        self.wizard_fmin = StringVar(value="1")
-        self.wizard_fmax = StringVar(value="18")
-        self.wizard_epsilon = StringVar(value="4.3")
-        self.wizard_tand = StringVar(value="0.02")
-        self.wizard_boundary = BooleanVar(value=False)
-        self.auto_sync_wizard = BooleanVar(value=True)
+        self.plan_source = StringVar(value="example")
+
+        self.wizard_vars = {
+            "p": StringVar(value="10"),
+            "sub_t": StringVar(value="0.8"),
+            "copper_t": StringVar(value="0.035"),
+            "patch_w": StringVar(value="7.2"),
+            "fmin": StringVar(value="1"),
+            "fmax": StringVar(value="18"),
+            "epsilon": StringVar(value="4.3"),
+            "tand": StringVar(value="0.02"),
+        }
+        self.include_boundary = BooleanVar(value=False)
+
         self.llm_api_key = StringVar(value=os.getenv("LLM_API_KEY", ""))
         self.llm_base_url = StringVar(value=os.getenv("LLM_BASE_URL", "http://10.240.246.158:8000/v1"))
         self.llm_model = StringVar(value=os.getenv("LLM_MODEL", "Qwen3.5-122B"))
         self.llm_max_tokens = StringVar(value=os.getenv("LLM_MAX_TOKENS", "4096"))
+
         self.running = False
         self.output_queue: queue.Queue[str | None] = queue.Queue()
 
         self.colors = {
             "bg": "#f5f7fb",
             "panel": "#ffffff",
-            "panel2": "#eef2f7",
-            "text": "#111827",
             "muted": "#667085",
-            "border": "#d8dee9",
+            "text": "#111827",
             "accent": "#2563eb",
             "accent_hover": "#1d4ed8",
-            "danger": "#b42318",
             "console": "#0b1020",
             "console_text": "#d1e7ff",
         }
@@ -93,7 +96,7 @@ class CSTVibeGUI:
         self.configure_style()
         self.load_llm_config()
         self.build_layout()
-        self.load_example()
+        self.load_example_plan()
 
     def configure_style(self) -> None:
         self.root.configure(bg=self.colors["bg"])
@@ -107,408 +110,152 @@ class CSTVibeGUI:
         style.configure("Panel.TLabel", background=self.colors["panel"], foreground=self.colors["text"])
         style.configure("Muted.TLabel", background=self.colors["panel"], foreground=self.colors["muted"])
         style.configure("Header.TLabel", background="#0f172a", foreground="#f8fafc")
-        style.configure("Status.TLabel", background=self.colors["panel2"], foreground=self.colors["muted"])
-        style.configure("TButton", padding=(12, 7), borderwidth=0)
-        style.map("TButton", background=[("active", self.colors["panel2"])])
-        style.configure(
-            "Accent.TButton",
-            foreground="#ffffff",
-            background=self.colors["accent"],
-            padding=(14, 8),
-            borderwidth=0,
-        )
-        style.map(
-            "Accent.TButton",
-            background=[("active", self.colors["accent_hover"]), ("disabled", "#9ca3af")],
-            foreground=[("disabled", "#eef2f7")],
-        )
-        style.configure("Danger.TButton", foreground="#ffffff", background=self.colors["danger"])
-        style.configure("TCheckbutton", background=self.colors["panel"], foreground=self.colors["text"])
-        style.configure("TEntry", fieldbackground="#ffffff", bordercolor=self.colors["border"])
-        style.configure("TNotebook", background=self.colors["bg"], borderwidth=0)
-        style.configure("TNotebook.Tab", padding=(16, 8), background=self.colors["panel2"])
-        style.map("TNotebook.Tab", background=[("selected", self.colors["panel"])])
+        style.configure("TButton", padding=(12, 7))
+        style.configure("Accent.TButton", foreground="#ffffff", background=self.colors["accent"], padding=(14, 8))
+        style.map("Accent.TButton", background=[("active", self.colors["accent_hover"])])
 
     def build_layout(self) -> None:
-        header = ttk.Frame(self.root, style="Header.TFrame", padding=(22, 16))
+        header = ttk.Frame(self.root, style="Header.TFrame", padding=(20, 14))
         header.pack(fill=X)
-
-        title_box = ttk.Frame(header, style="Header.TFrame")
-        title_box.pack(side=LEFT, fill=X, expand=True)
         ttk.Label(
-            title_box,
+            header,
             text="CST Vibe Runner",
             style="Header.TLabel",
             font=("Segoe UI Semibold", 18),
-        ).pack(anchor="w")
+        ).pack(side=LEFT)
         ttk.Label(
-            title_box,
-            text="로컬 LLM이 만든 JSON 명령서를 CST 자동화로 실행",
+            header,
+            text="CST 2025 CT 기본값 / 대사 -> JSON -> CST 실행",
             style="Header.TLabel",
             font=("Segoe UI", 10),
-        ).pack(anchor="w", pady=(3, 0))
+        ).pack(side=LEFT, padx=(16, 0))
+        ttk.Button(header, text="설정", command=self.open_settings).pack(side=RIGHT)
 
-        ttk.Button(header, text="LLM 프롬프트 복사", command=self.copy_prompt).pack(side=RIGHT)
+        body = ttk.Frame(self.root, padding=14)
+        body.pack(fill=BOTH, expand=True)
+        body.columnconfigure(0, weight=1)
+        body.columnconfigure(1, weight=2)
+        body.rowconfigure(0, weight=1)
 
-        main = ttk.PanedWindow(self.root, orient=HORIZONTAL)
-        main.pack(fill=BOTH, expand=True, padx=14, pady=14)
+        left = ttk.Frame(body, style="Panel.TFrame", padding=16)
+        left.grid(row=0, column=0, sticky="nsew", padx=(0, 10))
+        right = ttk.Frame(body, style="Panel.TFrame", padding=12)
+        right.grid(row=0, column=1, sticky="nsew")
+        left.rowconfigure(1, weight=1)
+        right.rowconfigure(1, weight=1)
+        right.columnconfigure(0, weight=1)
 
-        left = ttk.Frame(main, style="Panel.TFrame", padding=16)
-        right = ttk.Frame(main, style="Panel.TFrame", padding=12)
-        main.add(left, weight=1)
-        main.add(right, weight=3)
-
-        self.build_left_panel(left)
-        self.build_right_panel(right)
+        self.build_request_panel(left)
+        self.build_result_panel(right)
 
         status_bar = ttk.Frame(self.root, style="Panel.TFrame")
         status_bar.pack(fill=X, side="bottom")
-        ttk.Label(status_bar, textvariable=self.status, style="Status.TLabel", padding=(12, 7)).pack(
-            fill=X
-        )
+        ttk.Label(status_bar, textvariable=self.status, style="Muted.TLabel", padding=(12, 7)).pack(fill=X)
 
-    def build_left_panel(self, parent: ttk.Frame) -> None:
+    def build_request_panel(self, parent: ttk.Frame) -> None:
         ttk.Label(
             parent,
-            text="요청 메모",
+            text="1. 하고 싶은 작업을 적으세요",
             style="Panel.TLabel",
-            font=("Segoe UI Semibold", 12),
-        ).pack(anchor="w")
-        ttk.Label(
-            parent,
-            text="여기에 네가 하고 싶은 CST 작업을 적고, 로컬 LLM에 보낸 뒤 JSON을 오른쪽에 붙여넣으면 됩니다.",
-            style="Muted.TLabel",
-            wraplength=300,
-            justify=LEFT,
-        ).pack(anchor="w", pady=(4, 10))
+            font=("Segoe UI Semibold", 13),
+        ).grid(row=0, column=0, sticky="w")
 
         self.request_text = ScrolledText(
             parent,
-            height=12,
             wrap="word",
-            bd=0,
-            relief="flat",
+            height=12,
             bg="#f8fafc",
             fg=self.colors["text"],
             insertbackground=self.colors["accent"],
             font=("Malgun Gothic", 10),
             padx=10,
             pady=10,
-        )
-        self.request_text.pack(fill=BOTH, expand=False)
-        self.request_text.insert(
-            "1.0",
-            "예: 주기 10 mm, FR4 두께 0.8 mm, 구리 패치 폭 7.2 mm인 차폐 유닛셀을 만들고 1-18 GHz로 설정해줘.",
-        )
-
-        ttk.Separator(parent).pack(fill=X, pady=16)
-
-        ttk.Label(
-            parent,
-            text="설계 마법사",
-            style="Panel.TLabel",
-            font=("Segoe UI Semibold", 12),
-        ).pack(anchor="w")
-        ttk.Label(
-            parent,
-            text="CST 2025 안전 기본값입니다. 포트와 solver는 넣지 않고 형상만 만듭니다.",
-            style="Muted.TLabel",
-            wraplength=300,
-            justify=LEFT,
-        ).pack(anchor="w", pady=(4, 8))
-
-        wizard = ttk.Frame(parent, style="Panel.TFrame")
-        wizard.pack(fill=X)
-        self.add_wizard_row(wizard, 0, "p 주기", self.wizard_p)
-        self.add_wizard_row(wizard, 1, "sub_t 기판", self.wizard_sub_t)
-        self.add_wizard_row(wizard, 2, "copper_t 구리", self.wizard_copper_t)
-        self.add_wizard_row(wizard, 3, "patch_w 패치", self.wizard_patch_w)
-        self.add_wizard_row(wizard, 4, "fmin", self.wizard_fmin)
-        self.add_wizard_row(wizard, 5, "fmax", self.wizard_fmax)
-        self.add_wizard_row(wizard, 6, "epsilon", self.wizard_epsilon)
-        self.add_wizard_row(wizard, 7, "tand", self.wizard_tand)
-        ttk.Checkbutton(
-            parent,
-            text="유닛셀 경계조건 포함",
-            variable=self.wizard_boundary,
-        ).pack(anchor="w", pady=(8, 2))
-        ttk.Checkbutton(
-            parent,
-            text="마법사 값 자동 반영",
-            variable=self.auto_sync_wizard,
-        ).pack(anchor="w", pady=2)
-        ttk.Button(parent, text="형상 JSON 만들기", command=self.apply_wizard_plan).pack(fill=X, pady=(8, 4))
-        ttk.Button(parent, text="JSON 만들고 드라이런", command=self.apply_wizard_and_dry).pack(fill=X, pady=4)
-
-        ttk.Separator(parent).pack(fill=X, pady=16)
-
-        ttk.Label(
-            parent,
-            text="LLM 변환",
-            style="Panel.TLabel",
-            font=("Segoe UI Semibold", 12),
-        ).pack(anchor="w")
-        ttk.Label(
-            parent,
-            text="회사/로컬 OpenAI 호환 LLM으로 요청 메모를 JSON으로 변환합니다.",
-            style="Muted.TLabel",
-            wraplength=300,
-            justify=LEFT,
-        ).pack(anchor="w", pady=(4, 8))
-
-        llm_box = ttk.Frame(parent, style="Panel.TFrame")
-        llm_box.pack(fill=X)
-        self.add_wizard_row(llm_box, 0, "Base URL", self.llm_base_url)
-        self.add_wizard_row(llm_box, 1, "Model", self.llm_model)
-        self.add_wizard_row(llm_box, 2, "API Key", self.llm_api_key)
-        self.add_wizard_row(llm_box, 3, "Max tokens", self.llm_max_tokens)
-        ttk.Button(parent, text="LLM 설정 저장", command=self.save_llm_config).pack(fill=X, pady=(8, 4))
-        ttk.Button(parent, text="LLM 연결 테스트", command=self.test_llm_connection).pack(fill=X, pady=4)
-        ttk.Button(parent, text="대사 -> JSON", command=self.convert_request_with_llm).pack(fill=X, pady=4)
-
-        ttk.Separator(parent).pack(fill=X, pady=16)
-
-        ttk.Label(
-            parent,
-            text="CST 연결",
-            style="Panel.TLabel",
-            font=("Segoe UI Semibold", 12),
-        ).pack(anchor="w")
-
-        ttk.Label(parent, text="COM ProgID", style="Muted.TLabel").pack(anchor="w", pady=(8, 2))
-        ttk.Entry(parent, textvariable=self.prog_id).pack(fill=X)
-        ttk.Checkbutton(parent, text="CST UI 보이기", variable=self.visible).pack(anchor="w", pady=(10, 2))
-
-        ttk.Separator(parent).pack(fill=X, pady=16)
-
-        ttk.Label(
-            parent,
-            text="빠른 작업",
-            style="Panel.TLabel",
-            font=("Segoe UI Semibold", 12),
-        ).pack(anchor="w")
-        ttk.Button(parent, text="예제 불러오기", command=self.load_example).pack(fill=X, pady=(8, 4))
-        ttk.Button(parent, text="JSON 정렬", command=self.format_json).pack(fill=X, pady=4)
-        ttk.Button(parent, text="RF Check", command=self.validate_current_plan).pack(fill=X, pady=4)
-        ttk.Button(parent, text="Save Report", command=self.save_output_report).pack(fill=X, pady=4)
-        ttk.Button(parent, text="출력 복사", command=self.copy_output).pack(fill=X, pady=4)
-        ttk.Button(parent, text="출력 지우기", command=self.clear_output).pack(fill=X, pady=4)
-
-    def add_wizard_row(
-        self,
-        parent: ttk.Frame,
-        row: int,
-        label: str,
-        variable: StringVar,
-    ) -> None:
-        ttk.Label(parent, text=label, style="Muted.TLabel").grid(row=row, column=0, sticky="w", pady=2)
-        ttk.Entry(parent, textvariable=variable, width=12).grid(row=row, column=1, sticky="ew", pady=2)
-        parent.columnconfigure(1, weight=1)
-
-    def build_right_panel(self, parent: ttk.Frame) -> None:
-        toolbar = ttk.Frame(parent, style="Panel.TFrame")
-        toolbar.pack(fill=X, pady=(0, 10))
-
-        ttk.Button(toolbar, text="열기", command=self.open_plan).pack(side=LEFT, padx=(0, 6))
-        ttk.Button(toolbar, text="저장", command=self.save_plan).pack(side=LEFT, padx=6)
-        ttk.Button(toolbar, text="다른 이름 저장", command=self.save_plan_as).pack(side=LEFT, padx=6)
-        ttk.Button(toolbar, text="CST 연동 테스트", command=self.run_connection_test).pack(
-            side=LEFT, padx=6
-        )
-        ttk.Button(toolbar, text="Step Diagnose", command=self.run_diagnostics).pack(side=LEFT, padx=6)
-        ttk.Button(toolbar, text="RF Package", command=self.run_rf_package_dry).pack(side=LEFT, padx=6)
-        ttk.Button(toolbar, text="RF Run", command=self.run_rf_package_cst).pack(side=LEFT, padx=6)
-
-        ttk.Button(toolbar, text="CST 실행", style="Accent.TButton", command=self.run_cst).pack(
-            side=RIGHT, padx=(6, 0)
-        )
-        ttk.Button(toolbar, text="드라이런", style="Accent.TButton", command=self.run_dry).pack(
-            side=RIGHT, padx=6
-        )
-
-        path_row = ttk.Frame(parent, style="Panel.TFrame")
-        path_row.pack(fill=X, pady=(0, 8))
-        ttk.Label(path_row, text="파일", style="Muted.TLabel").pack(side=LEFT)
-        ttk.Entry(path_row, textvariable=self.plan_path).pack(side=LEFT, fill=X, expand=True, padx=(8, 0))
-
-        self.notebook = ttk.Notebook(parent)
-        self.notebook.pack(fill=BOTH, expand=True)
-
-        plan_tab = ttk.Frame(self.notebook, style="Panel.TFrame", padding=0)
-        output_tab = ttk.Frame(self.notebook, style="Panel.TFrame", padding=0)
-        self.notebook.add(plan_tab, text="JSON 명령서")
-        self.notebook.add(output_tab, text="실행 출력")
-
-        self.plan_text = ScrolledText(
-            plan_tab,
-            wrap="none",
             bd=0,
             relief="flat",
-            bg="#fbfdff",
-            fg=self.colors["text"],
-            insertbackground=self.colors["accent"],
-            selectbackground="#bfdbfe",
-            font=("Cascadia Mono", 10),
-            padx=12,
-            pady=12,
-            undo=True,
         )
-        self.plan_text.pack(fill=BOTH, expand=True)
+        self.request_text.grid(row=1, column=0, sticky="nsew", pady=(8, 12))
+        self.request_text.insert(
+            "1.0",
+            "포트 없이 패치 유닛셀 만들어줘.\n"
+            "p=10, sub_t=0.8, copper_t=0.035, patch_w=7.2, fmin=1, fmax=18.\n"
+            "단위는 mm, GHz, ns.",
+        )
+
+        actions = ttk.Frame(parent, style="Panel.TFrame")
+        actions.grid(row=2, column=0, sticky="ew")
+        actions.columnconfigure(0, weight=1)
+
+        buttons = [
+            ("대사 -> JSON 만들기", self.convert_request_with_llm, "Accent.TButton"),
+            ("기본 유닛셀 값 입력", self.open_wizard, "TButton"),
+            ("실행 전 확인", self.preflight_check, "TButton"),
+            ("CST 2025 연결 테스트", self.run_connection_test, "TButton"),
+            ("CST 실행 + 결과폴더", self.run_rf_package_cst, "Accent.TButton"),
+            ("문제 진단", self.run_diagnostics, "TButton"),
+        ]
+        for row, (label, command, style) in enumerate(buttons):
+            ttk.Button(actions, text=label, command=command, style=style).grid(
+                row=row, column=0, sticky="ew", pady=4
+            )
+
+        utility = ttk.Frame(parent, style="Panel.TFrame")
+        utility.grid(row=3, column=0, sticky="ew", pady=(12, 0))
+        for i in range(3):
+            utility.columnconfigure(i, weight=1)
+        ttk.Button(utility, text="JSON 보기", command=lambda: self.notebook.select(1)).grid(row=0, column=0, sticky="ew", padx=(0, 4))
+        ttk.Button(utility, text="리포트 저장", command=self.save_output_report).grid(row=0, column=1, sticky="ew", padx=4)
+        ttk.Button(utility, text="출력 복사", command=self.copy_output).grid(row=0, column=2, sticky="ew", padx=(4, 0))
+
+    def build_result_panel(self, parent: ttk.Frame) -> None:
+        top = ttk.Frame(parent, style="Panel.TFrame")
+        top.grid(row=0, column=0, sticky="ew", pady=(0, 8))
+        ttk.Label(
+            top,
+            text="2. 실행 상태",
+            style="Panel.TLabel",
+            font=("Segoe UI Semibold", 13),
+        ).pack(side=LEFT)
+        ttk.Button(top, text="예제 초기화", command=self.load_example_plan).pack(side=RIGHT, padx=(6, 0))
+        ttk.Button(top, text="JSON 정렬", command=self.format_json).pack(side=RIGHT)
+
+        self.notebook = ttk.Notebook(parent)
+        self.notebook.grid(row=1, column=0, sticky="nsew")
+
+        output_tab = ttk.Frame(self.notebook, style="Panel.TFrame")
+        json_tab = ttk.Frame(self.notebook, style="Panel.TFrame")
+        self.notebook.add(output_tab, text="실행 출력")
+        self.notebook.add(json_tab, text="JSON 명령서")
 
         self.output_text = ScrolledText(
             output_tab,
             wrap="word",
-            bd=0,
-            relief="flat",
             bg=self.colors["console"],
             fg=self.colors["console_text"],
             insertbackground="#93c5fd",
             font=("Cascadia Mono", 10),
             padx=12,
             pady=12,
+            bd=0,
+            relief="flat",
         )
         self.output_text.pack(fill=BOTH, expand=True)
 
-    def load_llm_config(self) -> None:
-        if not LLM_CONFIG.exists():
-            return
-        try:
-            data = json.loads(LLM_CONFIG.read_text(encoding="utf-8"))
-        except Exception:
-            return
-        self.llm_api_key.set(str(data.get("api_key", self.llm_api_key.get())))
-        self.llm_base_url.set(str(data.get("base_url", self.llm_base_url.get())))
-        self.llm_model.set(str(data.get("model", self.llm_model.get())))
-        self.llm_max_tokens.set(str(data.get("max_tokens", self.llm_max_tokens.get())))
-
-    def save_llm_config(self) -> None:
-        try:
-            data = {
-                "api_key": self.llm_api_key.get().strip(),
-                "base_url": self.llm_base_url.get().strip(),
-                "model": self.llm_model.get().strip(),
-                "max_tokens": int(self.llm_max_tokens.get().strip()),
-            }
-            LLM_CONFIG.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-        except Exception as exc:
-            messagebox.showerror("LLM 설정 저장 실패", str(exc))
-            return
-        self.set_status("LLM 설정을 저장했습니다.")
-
-    def llm_client(self):
-        try:
-            from openai import OpenAI
-        except ImportError as exc:
-            raise RuntimeError("openai 패키지가 필요합니다: python -m pip install openai") from exc
-        return OpenAI(
-            api_key=self.llm_api_key.get().strip() or "sk-ignored",
-            base_url=self.llm_base_url.get().strip(),
+        self.plan_text = ScrolledText(
+            json_tab,
+            wrap="none",
+            bg="#fbfdff",
+            fg=self.colors["text"],
+            insertbackground=self.colors["accent"],
+            font=("Cascadia Mono", 10),
+            padx=12,
+            pady=12,
+            bd=0,
+            relief="flat",
+            undo=True,
         )
+        self.plan_text.pack(fill=BOTH, expand=True)
 
-    def test_llm_connection(self) -> None:
-        if self.running:
-            messagebox.showinfo("실행 중", "이미 실행 중입니다.")
-            return
-        self.running = True
-        self.clear_output()
-        self.notebook.select(1)
-        self.append_output("[llm] 연결 테스트 시작\n")
-        self.set_status("LLM 연결 테스트 중...")
-
-        def worker() -> None:
-            try:
-                resp = self.llm_client().chat.completions.create(
-                    model=self.llm_model.get().strip(),
-                    messages=[{"role": "user", "content": "JSON 변환 준비가 되었으면 ok라고만 답하세요."}],
-                    max_tokens=50,
-                    temperature=0.0,
-                )
-                answer = (resp.choices[0].message.content or "").strip()
-                self.root.after(0, lambda: self.append_output(f"[llm] 연결 성공: {answer}\n"))
-                self.root.after(0, lambda: self.set_status("LLM 연결 성공"))
-            except Exception as exc:
-                self.root.after(0, lambda exc=exc: self.append_output(f"[llm] 연결 실패: {exc}\n"))
-                self.root.after(0, lambda: self.set_status("LLM 연결 실패"))
-            finally:
-                self.root.after(0, self._mark_not_running)
-
-        threading.Thread(target=worker, daemon=True).start()
-
-    def convert_request_with_llm(self) -> None:
-        if self.running:
-            messagebox.showinfo("실행 중", "이미 실행 중입니다.")
-            return
-        request = self.request_text.get("1.0", "end-1c").strip()
-        if not request:
-            messagebox.showerror("요청 없음", "왼쪽 요청 메모에 CST 작업 대사를 입력하세요.")
-            return
-        try:
-            prompt = PROMPT_FILE.read_text(encoding="utf-8")
-        except OSError as exc:
-            messagebox.showerror("프롬프트 읽기 실패", str(exc))
-            return
-
-        self.save_llm_config()
-        self.running = True
-        self.clear_output()
-        self.notebook.select(1)
-        self.append_output("[llm] 대사를 JSON으로 변환 중...\n")
-        self.set_status("LLM JSON 변환 중...")
-
-        def worker() -> None:
-            try:
-                messages = [
-                    {"role": "system", "content": prompt},
-                    {
-                        "role": "user",
-                        "content": (
-                            "아래 요청을 CST Vibe Runner JSON으로 변환하세요. "
-                            "반드시 JSON만 출력하세요.\n\n"
-                            f"{request}"
-                        ),
-                    },
-                ]
-                resp = self.llm_client().chat.completions.create(
-                    model=self.llm_model.get().strip(),
-                    messages=messages,
-                    max_tokens=int(self.llm_max_tokens.get().strip()),
-                    temperature=0.1,
-                )
-                content = resp.choices[0].message.content or ""
-                plan = extract_json_object(content)
-                formatted = json.dumps(plan, ensure_ascii=False, indent=2) + "\n"
-                self.root.after(0, lambda: self._apply_llm_plan(formatted))
-            except Exception as exc:
-                self.root.after(0, lambda exc=exc: self.append_output(f"[llm] JSON 변환 실패: {exc}\n"))
-                self.root.after(0, lambda: self.set_status("LLM JSON 변환 실패"))
-            finally:
-                self.root.after(0, self._mark_not_running)
-
-        threading.Thread(target=worker, daemon=True).start()
-
-    def _apply_llm_plan(self, formatted: str) -> None:
-        self.plan_text.delete("1.0", END)
-        self.plan_text.insert("1.0", formatted)
-        self.plan_path.set(str(APP_DIR / "llm_generated_plan.json"))
-        self.auto_sync_wizard.set(False)
-        self.append_output("[llm] JSON 변환 완료. RF Check와 드라이런을 먼저 실행하세요.\n")
-        self.append_output("[llm] 마법사 값 자동 반영을 껐습니다. LLM JSON 파라미터가 그대로 실행됩니다.\n")
-        self.set_status("LLM JSON 변환 완료")
-
-    def _mark_not_running(self) -> None:
-        self.running = False
-
-    def copy_prompt(self) -> None:
-        try:
-            text = PROMPT_FILE.read_text(encoding="utf-8")
-        except OSError as exc:
-            messagebox.showerror("프롬프트 복사 실패", str(exc))
-            return
-        self.root.clipboard_clear()
-        self.root.clipboard_append(text)
-        self.set_status("로컬 LLM 프롬프트를 클립보드에 복사했습니다.")
-
-    def load_example(self) -> None:
+    def load_example_plan(self) -> None:
         try:
             text = EXAMPLE_PLAN.read_text(encoding="utf-8")
         except OSError as exc:
@@ -516,196 +263,91 @@ class CSTVibeGUI:
             return
         self.plan_text.delete("1.0", END)
         self.plan_text.insert("1.0", text)
-        self.plan_path.set(str(EXAMPLE_PLAN))
-        self.set_status("예제 명령서를 불러왔습니다.")
+        self.plan_source.set("wizard")
+        self.status.set("기본 포트 없는 유닛셀 예제를 불러왔습니다.")
 
-    def open_plan(self) -> None:
-        path = filedialog.askopenfilename(
-            title="CST 명령서 열기",
-            initialdir=str(APP_DIR),
-            filetypes=[("Plan files", "*.json *.yaml *.yml"), ("All files", "*.*")],
+    def open_settings(self) -> None:
+        win = Toplevel(self.root)
+        win.title("설정")
+        win.geometry("560x360")
+        win.transient(self.root)
+        win.grab_set()
+        frm = ttk.Frame(win, padding=16)
+        frm.pack(fill=BOTH, expand=True)
+        for i in range(2):
+            frm.columnconfigure(i, weight=1)
+
+        rows = [
+            ("CST ProgID", self.prog_id),
+            ("LLM Base URL", self.llm_base_url),
+            ("LLM Model", self.llm_model),
+            ("LLM API Key", self.llm_api_key),
+            ("LLM Max Tokens", self.llm_max_tokens),
+        ]
+        for row, (label, var) in enumerate(rows):
+            ttk.Label(frm, text=label).grid(row=row, column=0, sticky="w", pady=5)
+            ttk.Entry(frm, textvariable=var).grid(row=row, column=1, sticky="ew", pady=5)
+        ttk.Checkbutton(frm, text="CST UI 보이기", variable=self.visible).grid(
+            row=len(rows), column=1, sticky="w", pady=8
         )
-        if not path:
-            return
-        try:
-            text = Path(path).read_text(encoding="utf-8")
-        except OSError as exc:
-            messagebox.showerror("파일 열기 실패", str(exc))
-            return
-        self.plan_text.delete("1.0", END)
-        self.plan_text.insert("1.0", text)
-        self.plan_path.set(path)
-        self.set_status(f"열림: {path}")
 
-    def save_plan(self) -> None:
-        path = Path(self.plan_path.get().strip())
-        if not path:
-            self.save_plan_as()
-            return
-        self.write_plan(path)
+        btns = ttk.Frame(frm)
+        btns.grid(row=len(rows) + 1, column=0, columnspan=2, sticky="ew", pady=(16, 0))
+        ttk.Button(btns, text="LLM 연결 테스트", command=self.test_llm_connection).pack(side=LEFT)
+        ttk.Button(btns, text="저장", command=lambda: (self.save_llm_config(), win.destroy())).pack(side=RIGHT)
 
-    def save_plan_as(self) -> None:
-        path = filedialog.asksaveasfilename(
-            title="CST 명령서 저장",
-            initialdir=str(APP_DIR),
-            defaultextension=".json",
-            filetypes=[("JSON", "*.json"), ("YAML", "*.yaml *.yml"), ("All files", "*.*")],
+    def open_wizard(self) -> None:
+        win = Toplevel(self.root)
+        win.title("기본 유닛셀 값 입력")
+        win.geometry("460x430")
+        win.transient(self.root)
+        win.grab_set()
+        frm = ttk.Frame(win, padding=16)
+        frm.pack(fill=BOTH, expand=True)
+        frm.columnconfigure(1, weight=1)
+
+        labels = {
+            "p": "p 주기 mm",
+            "sub_t": "sub_t 기판두께 mm",
+            "copper_t": "copper_t 구리두께 mm",
+            "patch_w": "patch_w 패치폭 mm",
+            "fmin": "fmin GHz",
+            "fmax": "fmax GHz",
+            "epsilon": "epsilon",
+            "tand": "tand",
+        }
+        for row, (key, var) in enumerate(self.wizard_vars.items()):
+            ttk.Label(frm, text=labels[key]).grid(row=row, column=0, sticky="w", pady=4)
+            ttk.Entry(frm, textvariable=var).grid(row=row, column=1, sticky="ew", pady=4)
+        ttk.Checkbutton(frm, text="유닛셀 경계조건 포함", variable=self.include_boundary).grid(
+            row=len(labels), column=1, sticky="w", pady=8
         )
-        if not path:
-            return
-        self.plan_path.set(path)
-        self.write_plan(Path(path))
+        ttk.Label(
+            frm,
+            text="기본값은 포트와 solver를 만들지 않습니다.",
+            foreground=self.colors["muted"],
+        ).grid(row=len(labels) + 1, column=0, columnspan=2, sticky="w", pady=(4, 10))
 
-    def write_plan(self, path: Path) -> bool:
-        try:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(self.current_plan_text(), encoding="utf-8")
-        except OSError as exc:
-            messagebox.showerror("저장 실패", str(exc))
-            return False
-        self.set_status(f"저장됨: {path}")
-        return True
+        ttk.Button(
+            frm,
+            text="JSON 만들기",
+            style="Accent.TButton",
+            command=lambda: self.apply_wizard_from_dialog(win),
+        ).grid(row=len(labels) + 2, column=0, columnspan=2, sticky="ew")
 
-    def format_json(self) -> None:
-        try:
-            data = json.loads(self.current_plan_text())
-        except json.JSONDecodeError as exc:
-            messagebox.showerror("JSON 오류", f"{exc.msg}\nline {exc.lineno}, column {exc.colno}")
-            return
-        formatted = json.dumps(data, ensure_ascii=False, indent=2)
-        self.plan_text.delete("1.0", END)
-        self.plan_text.insert("1.0", formatted + "\n")
-        self.set_status("JSON을 보기 좋게 정렬했습니다.")
-
-    def validate_current_plan(self) -> None:
-        if self.auto_sync_wizard.get() and not self.sync_wizard_parameters_to_json():
-            return
-        try:
-            plan = json.loads(self.current_plan_text())
-        except json.JSONDecodeError as exc:
-            messagebox.showerror("JSON 오류", f"{exc.msg}\nline {exc.lineno}, column {exc.colno}")
-            return
-
-        messages = ["=== RF Check ==="]
-        params = plan.get("parameters", {})
-        commands = plan.get("commands", [])
-        if not isinstance(params, dict):
-            messages.append("[error] parameters must be an object.")
-            params = {}
-        if not isinstance(commands, list):
-            messages.append("[error] commands must be a list.")
-            commands = []
-
-        def as_float(key: str) -> float | None:
-            try:
-                return float(params[key])
-            except Exception:
-                return None
-
-        p = as_float("p")
-        patch_w = as_float("patch_w")
-        sub_t = as_float("sub_t")
-        copper_t = as_float("copper_t")
-        fmin = as_float("fmin")
-        fmax = as_float("fmax")
-        if p is not None and patch_w is not None and patch_w >= p:
-            messages.append("[error] patch_w must be smaller than p.")
-        if sub_t is not None and sub_t <= 0:
-            messages.append("[error] sub_t must be positive.")
-        if copper_t is not None and copper_t <= 0:
-            messages.append("[error] copper_t must be positive.")
-        if fmin is not None and fmax is not None and fmax <= fmin:
-            messages.append("[error] fmax must be greater than fmin.")
-
-        ops = [item.get("op") for item in commands if isinstance(item, dict)]
-        if "discrete_port" in ops:
-            messages.append("[warn] discrete_port is present. Verify port type/location manually in CST.")
-        if "solver_start" in ops:
-            messages.append("[warn] solver_start is present. Use only after geometry and setup are confirmed.")
-        if "boundary" in ops:
-            messages.append("[info] boundary is present. For first geometry checks, consider disabling it.")
-        brick_count = ops.count("brick")
-        messages.append(f"[info] command_count={len(commands)}, brick_count={brick_count}")
-        if len(messages) == 2 and messages[1].startswith("[info]"):
-            messages.append("[ok] No basic RF geometry issues found.")
-
-        self.clear_output()
-        self.append_output("\n".join(messages) + "\n")
-        self.notebook.select(1)
-        self.set_status("RF Check 완료")
-
-    def apply_wizard_plan(self) -> bool:
-        try:
-            plan = self.build_wizard_plan()
-        except ValueError as exc:
-            messagebox.showerror("설계값 오류", str(exc))
-            return False
-
-        self.plan_text.delete("1.0", END)
-        self.plan_text.insert("1.0", json.dumps(plan, ensure_ascii=False, indent=2) + "\n")
-        self.plan_path.set(str(APP_DIR / "generated_patch_unitcell.json"))
-        self.auto_sync_wizard.set(True)
-        self.set_status("설계 마법사 JSON을 만들었습니다. 먼저 드라이런으로 확인하세요.")
-        return True
-
-    def apply_wizard_and_dry(self) -> None:
+    def apply_wizard_from_dialog(self, win: Toplevel) -> None:
         if self.apply_wizard_plan():
-            self.run_dry()
+            win.destroy()
+            self.notebook.select(1)
 
     def wizard_values(self) -> dict[str, str]:
-        return {
-            "p": self.wizard_p.get().strip(),
-            "sub_t": self.wizard_sub_t.get().strip(),
-            "copper_t": self.wizard_copper_t.get().strip(),
-            "patch_w": self.wizard_patch_w.get().strip(),
-            "fmin": self.wizard_fmin.get().strip(),
-            "fmax": self.wizard_fmax.get().strip(),
-            "epsilon": self.wizard_epsilon.get().strip(),
-            "tand": self.wizard_tand.get().strip(),
-        }
+        return {key: var.get().strip() for key, var in self.wizard_vars.items()}
 
-    def sync_wizard_parameters_to_json(self) -> bool:
-        try:
-            values = self.wizard_values()
-            for key, value in values.items():
-                if not value:
-                    raise ValueError(f"{key} 값이 비어 있습니다.")
-            numeric = {key: float(value) for key, value in values.items()}
-            if numeric["p"] <= 0:
-                raise ValueError("p는 0보다 커야 합니다.")
-            if numeric["sub_t"] <= 0 or numeric["copper_t"] <= 0:
-                raise ValueError("sub_t와 copper_t는 0보다 커야 합니다.")
-            if numeric["patch_w"] <= 0:
-                raise ValueError("patch_w는 0보다 커야 합니다.")
-            if numeric["patch_w"] >= numeric["p"]:
-                raise ValueError("patch_w는 p보다 작아야 합니다. 패치가 유닛셀 밖으로 나갑니다.")
-            if numeric["fmax"] <= numeric["fmin"]:
-                raise ValueError("fmax는 fmin보다 커야 합니다.")
-
-            plan = json.loads(self.current_plan_text())
-            if not isinstance(plan, dict):
-                raise ValueError("JSON 최상위는 object여야 합니다.")
-            params = plan.setdefault("parameters", {})
-            if not isinstance(params, dict):
-                raise ValueError("parameters는 object여야 합니다.")
-            params.update(values)
-            self.plan_text.delete("1.0", END)
-            self.plan_text.insert("1.0", json.dumps(plan, ensure_ascii=False, indent=2) + "\n")
-            self.set_status("설계 마법사 파라미터를 JSON에 자동 반영했습니다.")
-            return True
-        except json.JSONDecodeError as exc:
-            messagebox.showerror("JSON 오류", f"{exc.msg}\nline {exc.lineno}, column {exc.colno}")
-            return False
-        except ValueError as exc:
-            messagebox.showerror("설계값 오류", str(exc))
-            return False
-
-    def build_wizard_plan(self) -> dict[str, object]:
+    def validate_wizard_values(self) -> dict[str, str]:
         values = self.wizard_values()
         for key, value in values.items():
             if not value:
                 raise ValueError(f"{key} 값이 비어 있습니다.")
-
         numeric = {key: float(value) for key, value in values.items()}
         if numeric["p"] <= 0:
             raise ValueError("p는 0보다 커야 합니다.")
@@ -714,15 +356,18 @@ class CSTVibeGUI:
         if numeric["patch_w"] <= 0:
             raise ValueError("patch_w는 0보다 커야 합니다.")
         if numeric["patch_w"] >= numeric["p"]:
-            raise ValueError("patch_w는 p보다 작아야 합니다. 패치가 유닛셀 밖으로 나갑니다.")
+            raise ValueError("patch_w는 p보다 작아야 합니다.")
         if numeric["fmax"] <= numeric["fmin"]:
             raise ValueError("fmax는 fmin보다 커야 합니다.")
+        return values
 
-        commands: list[dict[str, object]] = [
+    def build_wizard_plan(self) -> dict:
+        values = self.validate_wizard_values()
+        commands: list[dict] = [
             {"op": "units", "geometry": "mm", "frequency": "GHz", "time": "ns"},
             {"op": "frequency_range", "fmin": "fmin", "fmax": "fmax"},
         ]
-        if self.wizard_boundary.get():
+        if self.include_boundary.get():
             commands.append(
                 {
                     "op": "boundary",
@@ -766,72 +411,245 @@ class CSTVibeGUI:
                 {"op": "save"},
             ]
         )
-
         return {
             "project": {"mode": "new", "save_as": "output/generated_patch_unitcell.cst"},
-            "parameters": {
-                "p": values["p"],
-                "sub_t": values["sub_t"],
-                "copper_t": values["copper_t"],
-                "patch_w": values["patch_w"],
-                "fmin": values["fmin"],
-                "fmax": values["fmax"],
-                "epsilon": values["epsilon"],
-                "tand": values["tand"],
-            },
+            "parameters": values,
             "commands": commands,
         }
 
-    def run_dry(self) -> None:
-        if self.auto_sync_wizard.get() and not self.sync_wizard_parameters_to_json():
+    def apply_wizard_plan(self) -> bool:
+        try:
+            plan = self.build_wizard_plan()
+        except ValueError as exc:
+            messagebox.showerror("설계값 오류", str(exc))
+            return False
+        self.set_plan(plan, source="wizard")
+        self.status.set("기본 유닛셀 JSON을 만들었습니다.")
+        return True
+
+    def set_plan(self, plan: dict, source: str) -> None:
+        self.plan_text.delete("1.0", END)
+        self.plan_text.insert("1.0", json.dumps(plan, ensure_ascii=False, indent=2) + "\n")
+        self.plan_source.set(source)
+
+    def current_plan(self) -> dict:
+        data = json.loads(self.plan_text.get("1.0", "end-1c"))
+        if not isinstance(data, dict):
+            raise ValueError("JSON 최상위는 object여야 합니다.")
+        return data
+
+    def sync_wizard_parameters_if_needed(self) -> bool:
+        if self.plan_source.get() != "wizard":
+            return True
+        try:
+            values = self.validate_wizard_values()
+            plan = self.current_plan()
+            params = plan.setdefault("parameters", {})
+            if not isinstance(params, dict):
+                raise ValueError("parameters는 object여야 합니다.")
+            params.update(values)
+            self.set_plan(plan, source="wizard")
+            return True
+        except (ValueError, json.JSONDecodeError) as exc:
+            messagebox.showerror("실행 전 확인 실패", str(exc))
+            return False
+
+    def preflight_check(self) -> None:
+        if not self.sync_wizard_parameters_if_needed():
             return
-        self.run_plan(dry_run=True)
+        self.rf_check(show_only=False)
+        self.run_plan(dry_run=True, mode_label="실행 전 확인")
 
-    def run_cst(self) -> None:
-        if self.auto_sync_wizard.get() and not self.sync_wizard_parameters_to_json():
+    def rf_check(self, show_only: bool = True) -> bool:
+        try:
+            plan = self.current_plan()
+        except Exception as exc:
+            messagebox.showerror("JSON 오류", str(exc))
+            return False
+        messages = ["=== RF Check ==="]
+        params = plan.get("parameters", {})
+        commands = plan.get("commands", [])
+        if not isinstance(params, dict):
+            messages.append("[error] parameters must be an object.")
+            params = {}
+        if not isinstance(commands, list):
+            messages.append("[error] commands must be a list.")
+            commands = []
+
+        def as_float(key: str) -> float | None:
+            try:
+                return float(params[key])
+            except Exception:
+                return None
+
+        p = as_float("p")
+        patch_w = as_float("patch_w")
+        sub_t = as_float("sub_t")
+        copper_t = as_float("copper_t")
+        fmin = as_float("fmin")
+        fmax = as_float("fmax")
+        if p is not None and patch_w is not None and patch_w >= p:
+            messages.append("[error] patch_w must be smaller than p.")
+        if sub_t is not None and sub_t <= 0:
+            messages.append("[error] sub_t must be positive.")
+        if copper_t is not None and copper_t <= 0:
+            messages.append("[error] copper_t must be positive.")
+        if fmin is not None and fmax is not None and fmax <= fmin:
+            messages.append("[error] fmax must be greater than fmin.")
+
+        ops = [item.get("op") for item in commands if isinstance(item, dict)]
+        if "discrete_port" in ops:
+            messages.append("[warn] discrete_port가 있습니다. 포트 위치를 CST에서 확인하세요.")
+        if "solver_start" in ops:
+            messages.append("[warn] solver_start가 있습니다. 형상 확인 후 실행하는 것을 권장합니다.")
+        messages.append(f"[info] command_count={len(commands)}, brick_count={ops.count('brick')}")
+        has_error = any(line.startswith("[error]") for line in messages)
+        if not has_error:
+            messages.append("[ok] 기본 RF 치수 검사를 통과했습니다.")
+
+        self.clear_output()
+        self.append_output("\n".join(messages) + "\n\n")
+        self.notebook.select(0)
+        if show_only:
+            self.status.set("RF Check 완료")
+        return not has_error
+
+    def load_llm_config(self) -> None:
+        if not LLM_CONFIG.exists():
             return
-        self.run_plan(dry_run=False)
-
-    def run_diagnostics(self) -> None:
-        if self.auto_sync_wizard.get() and not self.sync_wizard_parameters_to_json():
+        try:
+            data = json.loads(LLM_CONFIG.read_text(encoding="utf-8"))
+        except Exception:
             return
-        self.run_plan(
-            dry_run=False,
-            mode_label="Step Diagnose",
-            extra_args=["--continue-on-error"],
-        )
+        self.llm_api_key.set(str(data.get("api_key", self.llm_api_key.get())))
+        self.llm_base_url.set(str(data.get("base_url", self.llm_base_url.get())))
+        self.llm_model.set(str(data.get("model", self.llm_model.get())))
+        self.llm_max_tokens.set(str(data.get("max_tokens", self.llm_max_tokens.get())))
+        self.prog_id.set(str(data.get("prog_id", self.prog_id.get())))
 
-    def run_rf_package_dry(self) -> None:
-        if self.auto_sync_wizard.get():
-            if not self.apply_wizard_plan():
-                return
-        self.run_plan(
-            dry_run=True,
-            mode_label="RF Package Dry Run",
-            extra_args=["--package-run"],
-        )
+    def save_llm_config(self) -> None:
+        try:
+            data = {
+                "api_key": self.llm_api_key.get().strip(),
+                "base_url": self.llm_base_url.get().strip(),
+                "model": self.llm_model.get().strip(),
+                "max_tokens": int(self.llm_max_tokens.get().strip()),
+                "prog_id": self.prog_id.get().strip(),
+            }
+            LLM_CONFIG.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        except Exception as exc:
+            messagebox.showerror("설정 저장 실패", str(exc))
+            return
+        self.status.set("설정을 저장했습니다.")
 
-    def run_rf_package_cst(self) -> None:
-        if self.auto_sync_wizard.get():
-            if not self.apply_wizard_plan():
-                return
-        self.run_plan(
-            dry_run=False,
-            mode_label="RF Package CST Run",
-            extra_args=["--package-run", "--continue-on-error"],
-        )
+    def llm_client(self):
+        try:
+            from openai import OpenAI
+        except ImportError as exc:
+            raise RuntimeError("openai 패키지가 필요합니다: py -m pip install openai") from exc
+        return OpenAI(api_key=self.llm_api_key.get().strip() or "sk-ignored", base_url=self.llm_base_url.get().strip())
+
+    def test_llm_connection(self) -> None:
+        if self.running:
+            return
+        self.save_llm_config()
+        self.running = True
+        self.clear_output()
+        self.notebook.select(0)
+        self.append_output("[llm] 연결 테스트 시작\n")
+        self.status.set("LLM 연결 테스트 중...")
+
+        def worker() -> None:
+            try:
+                resp = self.llm_client().chat.completions.create(
+                    model=self.llm_model.get().strip(),
+                    messages=[{"role": "user", "content": "ok라고만 답하세요."}],
+                    max_tokens=50,
+                    temperature=0.0,
+                )
+                answer = (resp.choices[0].message.content or "").strip()
+                self.root.after(0, lambda: self.append_output(f"[llm] 연결 성공: {answer}\n"))
+                self.root.after(0, lambda: self.status.set("LLM 연결 성공"))
+            except Exception as exc:
+                self.root.after(0, lambda exc=exc: self.append_output(f"[llm] 연결 실패: {exc}\n"))
+                self.root.after(0, lambda: self.status.set("LLM 연결 실패"))
+            finally:
+                self.root.after(0, self.mark_not_running)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def convert_request_with_llm(self) -> None:
+        if self.running:
+            return
+        request = self.request_text.get("1.0", "end-1c").strip()
+        if not request:
+            messagebox.showerror("요청 없음", "요청 메모에 대사를 입력하세요.")
+            return
+        try:
+            prompt = PROMPT_FILE.read_text(encoding="utf-8")
+        except OSError as exc:
+            messagebox.showerror("프롬프트 읽기 실패", str(exc))
+            return
+        self.save_llm_config()
+        self.running = True
+        self.clear_output()
+        self.notebook.select(0)
+        self.append_output("[llm] 대사를 JSON으로 변환 중...\n")
+        self.status.set("LLM JSON 변환 중...")
+
+        def worker() -> None:
+            try:
+                resp = self.llm_client().chat.completions.create(
+                    model=self.llm_model.get().strip(),
+                    messages=[
+                        {"role": "system", "content": prompt},
+                        {"role": "user", "content": f"아래 요청을 CST Vibe Runner JSON으로 변환하세요. JSON만 출력하세요.\n\n{request}"},
+                    ],
+                    max_tokens=int(self.llm_max_tokens.get().strip()),
+                    temperature=0.1,
+                )
+                content = resp.choices[0].message.content or ""
+                plan = extract_json_object(content)
+                self.root.after(0, lambda: self.apply_llm_plan(plan))
+            except Exception as exc:
+                self.root.after(0, lambda exc=exc: self.append_output(f"[llm] JSON 변환 실패: {exc}\n"))
+                self.root.after(0, lambda: self.status.set("LLM JSON 변환 실패"))
+            finally:
+                self.root.after(0, self.mark_not_running)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def apply_llm_plan(self, plan: dict) -> None:
+        self.set_plan(plan, source="llm")
+        self.append_output("[llm] JSON 변환 완료. 실행 전 확인을 먼저 누르세요.\n")
+        self.status.set("LLM JSON 변환 완료")
+        self.notebook.select(1)
+
+    def format_json(self) -> None:
+        try:
+            plan = self.current_plan()
+        except Exception as exc:
+            messagebox.showerror("JSON 오류", str(exc))
+            return
+        self.set_plan(plan, source=self.plan_source.get())
+        self.status.set("JSON 정렬 완료")
 
     def run_connection_test(self) -> None:
-        plan_text = json.dumps(
-            {
-                "project": {"mode": "new"},
-                "parameters": {},
-                "commands": [],
-            },
-            ensure_ascii=False,
-            indent=2,
-        )
-        self.run_plan(dry_run=False, plan_text=plan_text, mode_label="CST 연동 테스트")
+        plan_text = json.dumps({"project": {"mode": "new"}, "parameters": {}, "commands": []}, indent=2)
+        self.run_plan(dry_run=False, plan_text=plan_text, mode_label="CST 2025 연결 테스트")
+
+    def run_diagnostics(self) -> None:
+        if not self.sync_wizard_parameters_if_needed():
+            return
+        self.run_plan(False, mode_label="문제 진단", extra_args=["--continue-on-error"])
+
+    def run_rf_package_cst(self) -> None:
+        if not self.sync_wizard_parameters_if_needed():
+            return
+        if not self.rf_check(show_only=False):
+            self.append_output("[stop] RF Check에 error가 있어 실행하지 않았습니다.\n")
+            return
+        self.run_plan(False, mode_label="CST 실행 + 결과폴더", extra_args=["--package-run", "--continue-on-error"])
 
     def run_plan(
         self,
@@ -843,18 +661,12 @@ class CSTVibeGUI:
         if self.running:
             messagebox.showinfo("실행 중", "이미 실행 중입니다.")
             return
-
-        text = self.current_plan_text() if plan_text is None else plan_text
+        text = self.plan_text.get("1.0", "end-1c") if plan_text is None else plan_text
         try:
             json.loads(text)
-        except json.JSONDecodeError as exc:
-            messagebox.showerror("JSON 오류", f"{exc.msg}\nline {exc.lineno}, column {exc.colno}")
-            return
-
-        try:
             TEMP_PLAN.write_text(text, encoding="utf-8")
-        except OSError as exc:
-            messagebox.showerror("임시 파일 저장 실패", str(exc))
+        except Exception as exc:
+            messagebox.showerror("실행 준비 실패", str(exc))
             return
 
         cmd = [sys.executable, str(RUNNER), str(TEMP_PLAN), "--prog-id", self.prog_id.get().strip()]
@@ -866,14 +678,10 @@ class CSTVibeGUI:
             cmd.extend(extra_args)
 
         self.running = True
-        self.clear_output()
-        mode = mode_label or ("드라이런" if dry_run else "CST 실행")
-        self.append_output(f"$ {' '.join(cmd)}\n\n")
-        self.set_status(f"{mode} 중...")
-        self.notebook.select(1)
-
-        thread = threading.Thread(target=self.worker, args=(cmd, mode), daemon=True)
-        thread.start()
+        self.append_output(f"\n$ {' '.join(cmd)}\n\n")
+        self.notebook.select(0)
+        self.status.set(f"{mode_label or '실행'} 중...")
+        threading.Thread(target=self.worker, args=(cmd, mode_label or "실행"), daemon=True).start()
         self.root.after(80, self.drain_output_queue)
 
     def worker(self, cmd: list[str], mode: str) -> None:
@@ -909,13 +717,13 @@ class CSTVibeGUI:
             else:
                 self.append_output(item)
         if finished:
-            self.running = False
-            self.set_status("완료")
+            self.mark_not_running()
+            self.status.set("완료")
             return
         self.root.after(80, self.drain_output_queue)
 
-    def current_plan_text(self) -> str:
-        return self.plan_text.get("1.0", "end-1c")
+    def mark_not_running(self) -> None:
+        self.running = False
 
     def append_output(self, text: str) -> None:
         self.output_text.insert(END, text)
@@ -928,15 +736,15 @@ class CSTVibeGUI:
         text = self.output_text.get("1.0", "end-1c")
         self.root.clipboard_clear()
         self.root.clipboard_append(text)
-        self.set_status("실행 출력을 클립보드에 복사했습니다.")
+        self.status.set("출력을 복사했습니다.")
 
     def save_output_report(self) -> None:
         text = self.output_text.get("1.0", "end-1c")
         if not text.strip():
-            messagebox.showinfo("No output", "Run dry-run, CST execution, or Step Diagnose first.")
+            messagebox.showinfo("저장할 출력 없음", "먼저 실행 또는 진단을 하세요.")
             return
         path = filedialog.asksaveasfilename(
-            title="Save diagnostic report",
+            title="리포트 저장",
             initialdir=str(APP_DIR),
             initialfile="cst_vibe_diagnostic_report.txt",
             defaultextension=".txt",
@@ -947,12 +755,9 @@ class CSTVibeGUI:
         try:
             Path(path).write_text(text, encoding="utf-8")
         except OSError as exc:
-            messagebox.showerror("Save failed", str(exc))
+            messagebox.showerror("저장 실패", str(exc))
             return
-        self.set_status(f"진단 리포트 저장됨: {path}")
-
-    def set_status(self, text: str) -> None:
-        self.status.set(text)
+        self.status.set(f"리포트 저장됨: {path}")
 
 
 def main() -> None:

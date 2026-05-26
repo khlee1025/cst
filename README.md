@@ -1,51 +1,30 @@
 # CST Vibe Runner
 
-CST Vibe Runner는 **CST Studio Suite 2025 CT에서 차폐/유닛셀 설계를 쉽게 만들고, 실행 결과를 나중에 Python 모듈 결과와 비교할 수 있도록 정리하는 도구**입니다.
+CST Vibe Runner는 **한국어로 설계 의도를 적고, 그 내용을 JSON 명령서로 바꾼 뒤, CST Studio Suite 2025 CT를 Python으로 실행하는 도구**입니다.
 
-처음 목표는 단순합니다.
-
-```text
-설계 파라미터 입력
--> CST 형상 생성
--> CST 실행 또는 드라이런
--> 결과 폴더 자동 정리
--> 나중에 Python 모듈 결과와 비교
-```
-
-이 프로그램은 회사 LLM이나 외부 LLM API를 필수로 쓰지 않습니다. 기본 유닛셀은 GUI 안의 **설계 마법사**에서 숫자만 넣어도 JSON이 만들어집니다. 복잡한 구조가 필요할 때만 회사 LLM을 보조로 쓰면 됩니다.
-
-`khlee1025/claude-exam` 방식과 동일하게 OpenAI 호환 LLM 서버도 GUI에 연결할 수 있습니다. 회사 LLM의 `Base URL`, `Model`, `API Key`를 넣으면 왼쪽 대사를 바로 CST JSON으로 변환합니다.
-
-## 가장 먼저 할 일
-
-처음에는 이 순서대로만 하면 됩니다.
+최종 목표는 아래 흐름입니다.
 
 ```text
-1. python .\cst_vibe_gui.py
-2. CST 연동 테스트
-3. 설계 마법사에 숫자 입력 또는 요청 메모에 대사 입력
-4. 형상 JSON 만들기 또는 대사 -> JSON
-5. RF Check
-6. 드라이런
-7. RF Package
-8. RF Run 또는 CST 실행
+내가 대사 입력
+-> 회사/로컬 LLM이 CST JSON 생성
+-> Python이 CST 2025 CT 자동 실행
+-> runs 폴더에 입력값/결과 정리
+-> 나중에 Python 예측 모듈 결과와 비교
 ```
 
-처음부터 포트, solver, 복잡한 boundary를 넣지 마세요. 먼저 기판과 패치 형상이 정확히 만들어지는지 확인하는 것이 안전합니다.
-
-중요: GUI의 `드라이런`, `CST 실행`, `Step Diagnose`, `RF Check`, `RF Package`, `RF Run` 버튼은 실행 직전에 왼쪽 **설계 마법사 숫자**를 오른쪽 JSON의 `parameters`에 자동 반영합니다. 그래서 CST에서 파라미터를 다시 손으로 넣을 필요가 없습니다.
+처음 쓰는 사람 기준으로 GUI를 단순화했습니다. 기본값은 **CSTStudio.Application.2025**입니다.
 
 ## 다운로드
 
-GitHub에서 받기:
+GitHub 화면에서 받는 법:
 
-1. 저장소 화면으로 이동합니다.
-2. 브랜치가 `master`인지 확인합니다.
-3. 오른쪽 위 `Code` 버튼을 누릅니다.
+1. 저장소 `khlee1025/cst`로 갑니다.
+2. branch가 `master`인지 확인합니다.
+3. 초록색 `Code` 버튼을 누릅니다.
 4. `Download ZIP`을 누릅니다.
-5. ZIP 압축을 풉니다.
+5. ZIP을 풀고 그 폴더에서 실행합니다.
 
-바로 다운로드:
+바로 받기:
 
 [Download ZIP](https://github.com/khlee1025/cst/archive/refs/heads/master.zip)
 
@@ -56,393 +35,176 @@ git clone https://github.com/khlee1025/cst.git
 cd cst
 ```
 
-Git으로 받으면 업데이트가 편합니다.
+## 설치
 
-```powershell
-git pull
-```
-
-## 실행 준비
-
-Python이 필요합니다.
+Python 3.13에서도 실행 가능합니다.
 
 ```powershell
 python --version
+python -m pip install -r requirements.txt
 ```
 
-CST 없이 드라이런만 할 때는 추가 패키지가 거의 필요 없습니다.
+`requirements.txt`에는 아래가 들어 있습니다.
 
-CST와 실제 연동하려면 `pywin32`가 필요합니다.
+- `pywin32`: CST COM 자동 실행용
+- `openai`: 회사/로컬 LLM 서버 연결용
 
-```powershell
-python -m pip install pywin32
-```
+CST가 없는 PC에서도 GUI 실행, JSON 생성, 실행 전 확인은 할 수 있습니다. 실제 CST 실행만 CST 설치 PC에서 가능합니다.
 
-YAML 명령서를 쓰고 싶으면 추가로 설치합니다.
-
-```powershell
-python -m pip install pyyaml
-```
-
-JSON만 쓸 거면 `pyyaml`은 없어도 됩니다.
-
-## GUI 실행
+## 실행
 
 ```powershell
 python .\cst_vibe_gui.py
 ```
 
-GUI는 크게 세 부분입니다.
+GUI가 안 열리면 먼저 현재 폴더가 맞는지 확인하세요.
 
-```text
-왼쪽: 요청 메모, 설계 마법사, 빠른 작업
-오른쪽 위: 실행 버튼들
-오른쪽 아래: JSON 명령서 / 실행 출력 탭
+```powershell
+dir
 ```
 
-## GUI 버튼 설명
+`cst_vibe_gui.py`, `cst_vibe_runner.py`, `examples`가 보여야 합니다.
 
-### 설계 마법사
+## 가장 쉬운 사용 순서
 
-왼쪽에 있는 숫자 입력 영역입니다. 회사 LLM 없이 기본 패치 유닛셀 JSON을 만듭니다.
+처음에는 이 순서만 기억하면 됩니다.
+
+```text
+1. 설정
+2. 기본 유닛셀 값 입력
+3. 실행 전 확인
+4. CST 2025 연결 테스트
+5. CST 실행 + 결과폴더
+```
+
+LLM을 쓰는 경우:
+
+```text
+1. 설정에서 LLM Base URL / Model / API Key 저장
+2. 왼쪽 요청 메모에 대사 입력
+3. 대사 -> JSON 만들기
+4. 실행 전 확인
+5. CST 실행 + 결과폴더
+```
+
+## 버튼 설명
+
+### 설정
+
+우측 상단 버튼입니다.
+
+- `CST ProgID`: 기본값은 `CSTStudio.Application.2025`
+- `CST 화면 보이기`: 켜면 CST가 실제로 열리는 것을 볼 수 있습니다.
+- `LLM Base URL`: 회사/로컬 LLM 서버 주소
+- `Model`: 사용할 모델명
+- `API Key`: 서버가 요구하면 입력, 필요 없으면 비워도 됩니다.
+- `LLM 연결 테스트`: LLM 서버 연결 확인
+- `저장`: 다음 실행 때도 같은 설정 사용
+
+### 기본 유닛셀 값 입력
+
+CST나 JSON을 잘 몰라도 숫자만 넣어서 기본 패치 유닛셀 명령서를 만듭니다.
 
 입력값:
 
-| 항목 | 의미 | 기본값 |
-| --- | --- | --- |
-| `p` | 유닛셀 주기, mm | `10` |
-| `sub_t` | 기판 두께, mm | `0.8` |
-| `copper_t` | 구리 두께, mm | `0.035` |
-| `patch_w` | 패치 폭, mm | `7.2` |
-| `fmin` | 시작 주파수, GHz | `1` |
-| `fmax` | 끝 주파수, GHz | `18` |
-| `epsilon` | 기판 유전율 | `4.3` |
-| `tand` | 손실탄젠트 | `0.02` |
+- `p`: 유닛셀 주기, mm
+- `sub_t`: 기판 두께, mm
+- `copper_t`: 구리 두께, mm
+- `patch_w`: 패치 폭, mm
+- `fmin`, `fmax`: 해석 주파수 범위, GHz
+- `epsilon`: 기판 유전율
+- `tand`: 손실탄젠트
 
-기본 규칙:
+여기서 넣은 값은 CST가 켜진 뒤 다시 입력하는 값이 아닙니다. Python이 실행 전에 JSON에 넣고, CST에 자동 전달합니다.
 
-```text
-patch_w < p
-sub_t > 0
-copper_t > 0
-fmax > fmin
-```
+### 대사 -> JSON 만들기
 
-실행 버튼을 누르면 이 값들은 자동으로 JSON의 `parameters`에 반영됩니다.
+왼쪽 요청 메모를 LLM으로 보내 CST JSON 명령서로 바꿉니다.
 
-예를 들어 왼쪽에서 `p=12`, `patch_w=8`로 바꾸고 `CST 실행`을 누르면, 오른쪽 JSON도 자동으로 `p=12`, `patch_w=8`로 갱신된 뒤 CST에 전달됩니다.
-
-### 형상 JSON 만들기
-
-설계 마법사 숫자로 오른쪽 JSON 명령서를 자동 생성합니다.
-
-기본 생성 내용:
+예시 대사:
 
 ```text
-units
-frequency_range
-FR4 material
-substrate brick
-top_patch brick
-rebuild
-save
+FR4 기판 위에 10 mm 주기의 사각 패치 차폐 유닛셀을 만들어줘.
+기판 두께는 0.8 mm, 구리는 0.035 mm, 패치 폭은 7.2 mm.
+1 GHz부터 18 GHz까지 확인하고 싶어.
+포트는 아직 만들지 말고 형상과 파라미터 중심으로 만들어줘.
 ```
 
-기본적으로 포트와 solver는 넣지 않습니다.
+LLM 결과가 이상하면 `기본 유닛셀 값 입력`으로 다시 만드는 것이 더 안전합니다.
 
-### JSON 만들고 드라이런
+### 실행 전 확인
 
-설계 마법사 JSON을 만든 뒤 바로 드라이런합니다.
+CST를 열지 않고 아래를 확인합니다.
 
-### RF Check
+- JSON 문법이 맞는지
+- 핵심 RF 파라미터가 숫자인지
+- 패치 폭이 주기보다 큰지
+- 주파수 범위가 이상하지 않은지
+- CST에 보낼 명령이 어떤 형태인지
 
-현재 오른쪽 JSON을 RF 관점에서 간단히 검사합니다.
+여기서 성공하면 `종료코드 0`이 뜹니다.
 
-확인하는 것:
+### CST 2025 연결 테스트
 
-```text
-patch_w가 p보다 작은지
-sub_t/copper_t가 양수인지
-fmax가 fmin보다 큰지
-포트가 들어가 있는지
-solver_start가 들어가 있는지
-boundary가 들어가 있는지
-brick 개수가 몇 개인지
-```
+실제 CST COM 연결만 먼저 확인합니다. CST가 열리고 기본 명령이 넘어가는지 보는 단계입니다.
 
-초심자는 `RF Check`에서 경고가 없는 상태로 시작하는 것이 좋습니다.
+- 성공: `종료코드 0`
+- 실패: `종료코드 1` 또는 `2`와 함께 원본 에러 출력
 
-### 드라이런
+### CST 실행 + 결과폴더
 
-CST를 열지 않고, CST에 보낼 매크로만 출력합니다.
-
-정상 출력 예:
-
-```text
-With Units
-    .Geometry "mm"
-    .Frequency "GHz"
-    .Time "ns"
-End With
-
-With Brick
-...
-End With
-```
-
-드라이런이 성공하면 JSON 해석과 매크로 생성은 성공한 것입니다.
-
-### CST 연동 테스트
-
-CST가 COM으로 열리는지만 확인합니다. 매크로는 넣지 않습니다.
-
-이 버튼이 성공하면:
-
-```text
-Python -> pywin32 -> CST COM
-```
-
-연결은 된 것입니다.
-
-### CST 실행
-
-현재 JSON 명령서를 CST에 실제로 넣습니다.
-
-주의:
-
-```text
-CST 실행은 CST 2025 CT가 설치된 PC에서만 사용하세요.
-처음에는 포트 없는 예제로만 실행하세요.
-```
-
-실행 출력에는 아래처럼 실제로 CST에 넣은 파라미터가 표시됩니다.
-
-```text
-[param] p = 10
-[param] sub_t = 0.8
-[param] copper_t = 0.035
-[param] patch_w = 7.2
-```
-
-이 줄이 보이면 Python이 CST에 파라미터를 자동 전달한 것입니다.
-
-### LLM 설정 저장
-
-회사/로컬 OpenAI 호환 LLM 설정을 저장합니다.
-
-설정 파일:
-
-```text
-cst_llm_config.json
-```
-
-이 파일은 API Key가 들어갈 수 있어서 Git에는 올라가지 않도록 `.gitignore`에 포함되어 있습니다.
-
-### LLM 연결 테스트
-
-입력한 `Base URL`, `Model`, `API Key`로 LLM 서버에 짧은 요청을 보내 연결을 확인합니다.
-
-기본값:
-
-```text
-Base URL: http://10.240.246.158:8000/v1
-Model: Qwen3.5-122B
-API Key: 비워두면 sk-ignored 사용
-```
-
-### 대사 -> JSON
-
-왼쪽 `요청 메모`에 쓴 한국어 대사를 LLM으로 보내 CST Vibe Runner JSON으로 변환합니다.
-
-예:
-
-```text
-포트 없이 패치 유닛셀 만들어줘.
-p=10, sub_t=0.8, copper_t=0.035, patch_w=7.2, fmin=1, fmax=18.
-단위는 mm, GHz, ns.
-```
-
-변환이 끝나면 오른쪽 `JSON 명령서` 탭에 JSON이 들어갑니다.
-
-중요:
-
-```text
-대사 -> JSON을 쓰면 "마법사 값 자동 반영"이 자동으로 꺼집니다.
-그래야 LLM이 만든 JSON 파라미터가 왼쪽 숫자로 덮어써지지 않습니다.
-```
-
-LLM JSON을 실행하기 전에는 반드시 `RF Check`와 `드라이런`을 먼저 누르세요.
-
-### Step Diagnose
-
-한 명령이 실패해도 멈추지 않고 다음 명령을 계속 시도합니다.
-
-출력 예:
-
-```text
-[ok] commands[1] op=units
-[diagnostic-error] commands[2] op=frequency_range failed: ...
-[ok] commands[3] op=material
-```
-
-어떤 명령이 통과했고 어떤 명령이 실패했는지 한 번에 모을 때 씁니다.
-
-### Save Report
-
-실행 출력 전체를 텍스트 파일로 저장합니다.
-
-추천 파일명:
-
-```text
-cst_vibe_diagnostic_report.txt
-```
-
-오류가 반복되면 이 파일을 회사 LLM에 그대로 넣고 물어보면 됩니다.
-
-### RF Package
-
-CST 없이 표준 결과 폴더를 만들고 드라이런합니다.
+실제 CST를 실행하고 `runs` 폴더에 이번 실행 기록을 남깁니다.
 
 생성되는 구조:
 
 ```text
 runs/
-  20260526_162507_patch_unitcell_p10_sub_t0.8_patch_w7.2/
+  20260526_181500_patch_unitcell_p10_sub_t0.8_patch_w7.2/
     input_plan.json
     design_params.json
     summary.json
+    cst_project.cst
     exports/
-      README.txt
     logs/
 ```
 
-이 기능은 나중에 Python 모듈 결과와 비교하기 위한 준비 단계입니다.
+나중에 Python 예측 모듈과 비교할 때 이 폴더를 기준으로 쓰면 됩니다.
 
-### RF Run
+### 문제 진단
 
-표준 결과 폴더를 만들고 CST 실행까지 시도합니다.
+CST 실행이 실패했을 때 누릅니다. 한 명령에서 실패해도 다음 명령을 계속 보내서 어디까지 성공했는지 확인합니다.
 
-실패해도 진단 정보가 남도록 `continue-on-error` 모드로 실행합니다.
-
-### 열기 / 저장 / 다른 이름 저장
-
-JSON 명령서를 파일로 열거나 저장합니다.
-
-### 예제 불러오기
-
-기본 예제 `examples/02_patch_unitcell_no_ports.json`을 불러옵니다.
-
-### JSON 정렬
-
-오른쪽 JSON 문법을 확인하고 보기 좋게 정렬합니다.
-
-### 출력 복사
-
-실행 출력 탭의 내용을 클립보드에 복사합니다.
-
-### 출력 지우기
-
-실행 출력 탭을 비웁니다.
-
-## 추천 사용 순서
-
-### CST 없이 확인
+## 종료코드
 
 ```text
-1. GUI 실행
-2. 형상 JSON 만들기
-3. RF Check
-4. 드라이런
-5. RF Package
+0 = 정상
+1 = Python 실행 중 예상 못한 예외 또는 CST가 명령을 거부
+2 = JSON/입력/계획 검증 실패 또는 CST 명령 실패를 도구가 잡아낸 상태
 ```
 
-### CST 2025 CT에서 처음 확인
+중요한 것은 숫자만이 아니라 출력창의 `Original error`, `[diagnostic-error]`, `[ok]` 문장입니다.
+
+## CST 2025 연결 문제
+
+기본 ProgID는 아래입니다.
 
 ```text
-1. GUI 실행
-2. CST 연동 테스트
-3. 형상 JSON 만들기
-4. RF Check
-5. 드라이런
-6. CST 실행
-7. CST에서 형상 확인
+CSTStudio.Application.2025
 ```
 
-### 결과 비교 준비
+러너는 2025가 실패하면 아래도 자동으로 시도합니다.
 
 ```text
-1. 형상 JSON 만들기
-2. RF Check
-3. RF Package
-4. RF Run
-5. runs/.../exports/에 CST 결과 export 파일 저장
-6. 나중에 Python 모듈 결과를 같은 run 폴더에 저장
+CSTStudio.Application
+CSTStudio.Application.2024
+CSTStudio.Application.2023
 ```
 
-## 파일 설명
-
-```text
-README.md                         # 전체 기능 설명
-MANUAL.md                         # 자세한 사용 설명서
-DESIGN_GUIDE.md                   # 초심자용 설계 가이드
-DEBUG_WORKFLOW.md                 # 오류 진단/리포트 저장 흐름
-RF_RUN_PACKAGE.md                 # CST/Python 비교를 위한 run 폴더 규격
-cst_vibe_gui.py                    # GUI 실행 파일
-cst_vibe_runner.py                 # JSON/YAML 명령서 실행기
-prompt_for_local_llm.md            # 회사/로컬 LLM에 넣을 프롬프트
-requirements.txt                   # 필요한 패키지 목록
-examples/
-  00_connection_test.json
-  01_units_only.json
-  02_patch_unitcell_no_ports.json
-  03_patch_unitcell_with_ports_experimental.json
-  shielding_unitcell_plan.json
-```
-
-## 예제 파일 설명
-
-### examples/00_connection_test.json
-
-CST 연결만 확인합니다. commands가 비어 있습니다.
-
-### examples/01_units_only.json
-
-단위 설정만 확인합니다.
-
-### examples/02_patch_unitcell_no_ports.json
-
-초심자 기본 예제입니다.
-
-포함:
-
-```text
-FR4 기판
-구리 패치
-단위
-주파수 범위
-저장
-```
-
-포함하지 않음:
-
-```text
-포트
-solver_start
-복잡한 boundary
-결과 export
-```
-
-### examples/03_patch_unitcell_with_ports_experimental.json
-
-포트 실험용 예제입니다. 초심자 기본 예제가 아닙니다.
-
-### examples/shielding_unitcell_plan.json
-
-이전 호환용 예제입니다. 새로 시작할 때는 `02_patch_unitcell_no_ports.json`를 쓰세요.
+그래도 실패하면 CST가 COM 등록이 안 된 상태일 수 있습니다. CST 2025 CT를 한 번 직접 실행한 뒤 다시 시도하세요.
 
 ## CLI 사용
 
-GUI 없이 명령어로도 실행할 수 있습니다.
+GUI 없이도 실행할 수 있습니다.
 
 드라이런:
 
@@ -453,236 +215,45 @@ python .\cst_vibe_runner.py .\examples\02_patch_unitcell_no_ports.json --dry-run
 CST 실행:
 
 ```powershell
-python .\cst_vibe_runner.py .\examples\02_patch_unitcell_no_ports.json --visible
+python .\cst_vibe_runner.py .\examples\02_patch_unitcell_no_ports.json --visible --package-run
 ```
 
-단계별 진단:
+문제 진단:
 
 ```powershell
 python .\cst_vibe_runner.py .\examples\02_patch_unitcell_no_ports.json --visible --continue-on-error
 ```
 
-RF Package:
+## 파일 설명
+
+```text
+cst_vibe_gui.py          초보자용 GUI
+cst_vibe_runner.py       CST COM 실행 엔진
+prompt_for_local_llm.md  LLM에게 JSON 생성을 시킬 때 쓰는 프롬프트
+examples/                예제 JSON
+requirements.txt         필요한 Python 패키지
+MANUAL.md                더 자세한 설명서
+DEBUG_WORKFLOW.md        에러 전달/진단 방법
+RF_RUN_PACKAGE.md        runs 결과 폴더 구조
+```
+
+## LLM 서버 설정
+
+`khlee1025/claude-exam` 방식처럼 OpenAI 호환 API를 사용합니다.
+
+환경변수로도 설정할 수 있습니다.
 
 ```powershell
-python .\cst_vibe_runner.py .\examples\02_patch_unitcell_no_ports.json --dry-run --package-run
+$env:LLM_BASE_URL="http://10.240.246.158:8000/v1"
+$env:LLM_MODEL="Qwen3.5-122B"
+$env:LLM_API_KEY="EMPTY"
+python .\cst_vibe_gui.py
 ```
 
-RF Run:
+GUI의 `설정`에서 저장하면 `cst_llm_config.json`이 로컬에 생깁니다. 이 파일은 개인 설정이라 Git에는 올라가지 않습니다.
 
-```powershell
-python .\cst_vibe_runner.py .\examples\02_patch_unitcell_no_ports.json --visible --package-run --continue-on-error
-```
+## 지금 버전에서 의도적으로 제한한 것
 
-## JSON 명령서 구조
-
-기본 구조:
-
-```json
-{
-  "project": {
-    "mode": "new",
-    "save_as": "output/patch_unitcell_no_ports.cst"
-  },
-  "parameters": {
-    "p": "10",
-    "sub_t": "0.8",
-    "copper_t": "0.035",
-    "patch_w": "7.2",
-    "fmin": "1",
-    "fmax": "18"
-  },
-  "commands": [
-    {
-      "op": "units",
-      "geometry": "mm",
-      "frequency": "GHz",
-      "time": "ns"
-    },
-    {
-      "op": "brick",
-      "name": "substrate",
-      "component": "unitcell",
-      "material": "FR4_local",
-      "xrange": ["-p/2", "p/2"],
-      "yrange": ["-p/2", "p/2"],
-      "zrange": ["0", "sub_t"]
-    }
-  ]
-}
-```
-
-## 지원 명령
-
-```text
-units
-frequency_range
-boundary
-background
-material
-brick
-cylinder
-boolean
-discrete_port
-solver_start
-export_touchstone
-parameter
-rebuild
-save
-sweep
-vba_history
-```
-
-처음에는 아래 명령만 쓰는 것을 추천합니다.
-
-```text
-units
-frequency_range
-material
-brick
-rebuild
-save
-```
-
-## 종료코드
-
-```text
-0: 성공
-1: 예상하지 못한 Python/CST 오류
-2: JSON, PlanError, CST 매크로 오류
-```
-
-`Step Diagnose`에서는 종료코드 2가 떠도 출력 안의 `[ok]`, `[diagnostic-error]`가 더 중요합니다.
-
-## CST 2025 CT 권장 시작 설정
-
-```text
-COM ProgID: CSTStudio.Application
-CST UI 보이기: 켬
-유닛셀 경계조건 포함: 끔
-포트: 만들지 않음
-solver_start: 넣지 않음
-```
-
-형상이 맞게 생기는 것을 확인한 뒤에만 포트와 solver를 추가하세요.
-
-## 문제 해결
-
-### python 명령이 안 될 때
-
-Python이 설치되어 있지 않거나 PATH에 없습니다.
-
-```powershell
-python --version
-```
-
-### pywin32 오류
-
-CST 실제 연동에는 `pywin32`가 필요합니다.
-
-```powershell
-python -m pip install pywin32
-```
-
-### CST가 열리지 않을 때
-
-GUI의 `COM ProgID`를 확인하세요.
-
-기본값:
-
-```text
-CSTStudio.Application
-```
-
-후보:
-
-```text
-CSTStudio.Application.2025
-CSTStudio.Application.2024
-CSTStudio.Application.2023
-```
-
-### AddToHistory 오류
-
-`Step Diagnose`를 누른 뒤 `Save Report`로 리포트를 저장하세요.
-
-리포트에서 확인할 것:
-
-```text
-History name
-Macro code
-Original error
-normal call failed
-raw COM Invoke failed
-```
-
-### 이상한 도형이 생길 때
-
-먼저 `RF Check`를 누르세요.
-
-확인할 것:
-
-```text
-patch_w < p
-sub_t > 0
-copper_t > 0
-fmax > fmin
-commands에 discrete_port가 들어갔는지
-commands에 solver_start가 들어갔는지
-```
-
-## 회사 LLM을 쓸 때
-
-복잡한 구조가 필요하면 `prompt_for_local_llm.md` 내용을 회사 LLM에 넣고 요청하세요.
-
-추천 요청:
-
-```text
-CST Vibe Runner JSON을 만들어줘.
-포트는 만들지 마.
-solver_start도 넣지 마.
-기판과 금속 패치 형상만 만들어줘.
-단위는 mm, GHz, ns.
-p=10, sub_t=0.8, copper_t=0.035, patch_w=7.2, fmin=1, fmax=18.
-```
-
-나쁜 요청:
-
-```text
-알아서 차폐 유닛셀 만들어줘.
-```
-
-이렇게 말하면 LLM이 포트, solver, boundary를 마음대로 넣을 수 있습니다.
-
-## 현재 한계
-
-아직 완성형 CST 자동 설계 툴은 아닙니다.
-
-현재 잘하는 것:
-
-```text
-초심자용 패치 유닛셀 JSON 생성
-CST COM 연결 확인
-CST 매크로 드라이런
-단계별 진단
-RF run folder 생성
-Python 비교용 design_params/summary 생성
-```
-
-아직 조심해야 하는 것:
-
-```text
-CST 버전별 매크로 차이
-포트 자동 설정
-solver setup 자동화
-S-parameter export 자동화
-복잡한 주기구조/Floquet 포트 설정
-```
-
-그래서 현재 추천은:
-
-```text
-형상 생성 툴로 먼저 안정화
--> CST 결과 export 규칙 고정
--> Python 모듈 결과와 비교 툴 연결
-```
+- 포트는 자동 생성하지 않는 기본 흐름을 우선합니다.
+- 복잡한 구조는 LLM JSON으로 만들 수 있지만, 처음에는 `기본 유닛셀 값 입력`으로 검증하는 것을 추천합니다.
+- CST 결과 해석/그래프 비교 도구는 다음 단계입니다. 현재는 좋은 CST 실행 결과를 안정적으로 만드는 데 집중합니다.
