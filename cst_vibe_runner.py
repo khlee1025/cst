@@ -453,12 +453,28 @@ class CSTSession:
         errors: list[str] = []
         for object_name in order:
             try:
-                solver_object = getattr(self.mws, object_name)
-                solver_object.Start()
-                print(f"[cst] {object_name}.Start completed")
+                solver_object = self.get_cst_child_object(object_name)
+            except Exception as exc:
+                errors.append(f"{object_name} object lookup failed: {exc}")
+                continue
+            for method_name in ("Start", "start"):
+                try:
+                    getattr(solver_object, method_name)()
+                    print(f"[cst] {object_name}.{method_name} completed")
+                    return
+                except Exception as exc:
+                    errors.append(f"{object_name}.{method_name} failed: {exc}")
+            try:
+                solver_object._oleobj_.Invoke(
+                    solver_object._oleobj_.GetIDsOfNames("Start"),
+                    0,
+                    1,
+                    False,
+                )
+                print(f"[cst] {object_name}.Start completed by raw COM")
                 return
             except Exception as exc:
-                errors.append(f"{object_name}.Start failed: {exc}")
+                errors.append(f"{object_name}.Start raw COM failed: {exc}")
         name, code = macro_solver_start({"solver": solver})
         try:
             self.add_history(name, code)
@@ -466,6 +482,28 @@ class CSTSession:
         except Exception as exc:
             errors.append(f"AddToHistory fallback failed: {exc}")
         raise PlanError("CST solver start failed.\n" + "\n".join(errors))
+
+    def get_cst_child_object(self, object_name: str) -> Any:
+        attr = getattr(self.mws, object_name)
+        errors: list[str] = []
+        try:
+            obj = attr()
+            if obj is not None:
+                return obj
+        except Exception as exc:
+            errors.append(f"{object_name}() failed: {exc}")
+        if hasattr(attr, "Start") or hasattr(attr, "start"):
+            return attr
+        try:
+            return self.mws._oleobj_.Invoke(
+                self.mws._oleobj_.GetIDsOfNames(object_name),
+                0,
+                2,
+                False,
+            )
+        except Exception as exc:
+            errors.append(f"raw COM object invoke failed: {exc}")
+        raise PlanError("; ".join(errors))
 
     def save(self) -> None:
         if self.skip_saves:
