@@ -24,6 +24,15 @@
       "fmax": "fmax"
     },
     {
+      "op": "boundary",
+      "xmin": "unit cell",
+      "xmax": "unit cell",
+      "ymin": "unit cell",
+      "ymax": "unit cell",
+      "zmin": "open",
+      "zmax": "open"
+    },
+    {
       "op": "brick",
       "name": "thread_top_x",
       "component": "unitcell",

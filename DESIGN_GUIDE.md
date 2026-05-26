@@ -42,6 +42,7 @@ z 방향: 0 -> thickness
 - `thickness > 0`
 - `width < length / 2`
 - `fmin < fmax`
+- 기본 경계조건은 x/y `unit cell`, z `open`
 
 `width`가 너무 크면 가운데 빈 공간이 사라집니다.
 

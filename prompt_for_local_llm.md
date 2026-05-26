@@ -16,6 +16,7 @@ Beginner safety rules:
 - Do not add `export_touchstone` unless the user explicitly asks to export results.
 - Do not add complex boundary conditions unless the user explicitly asks for them.
 - For first-pass geometry generation, create only units, frequency range, and brick solids.
+- Use boundary conditions by default: x/y `unit cell`, z `open`.
 - Prefer simple `brick` geometry before using `cylinder`, `boolean`, or `vba_history`.
 
 Default mesh unit cell rules:
@@ -87,6 +88,15 @@ Example JSON:
       "op": "frequency_range",
       "fmin": "fmin",
       "fmax": "fmax"
+    },
+    {
+      "op": "boundary",
+      "xmin": "unit cell",
+      "xmax": "unit cell",
+      "ymin": "unit cell",
+      "ymax": "unit cell",
+      "zmin": "open",
+      "zmax": "open"
     },
     {
       "op": "brick",

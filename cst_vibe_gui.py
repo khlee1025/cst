@@ -72,9 +72,10 @@ class CSTVibeGUI:
             "fmin": StringVar(value="1"),
             "fmax": StringVar(value="18"),
         }
-        self.include_boundary = BooleanVar(value=False)
+        self.include_boundary = BooleanVar(value=True)
         self.sweep_parameter = StringVar(value="width")
         self.sweep_values = StringVar(value="5, 10, 15")
+        self.param_summary = StringVar(value="")
 
         self.llm_api_key = StringVar(value=os.getenv("LLM_API_KEY", ""))
         self.llm_base_url = StringVar(value=os.getenv("LLM_BASE_URL", "http://10.240.246.158:8000/v1"))
@@ -127,7 +128,7 @@ class CSTVibeGUI:
         ).pack(side=LEFT)
         ttk.Label(
             header,
-            text="CST 2025 CT 기본값 / 대사 -> JSON -> CST 실행",
+            text="CST 2025 CT / 대사 적용 -> 확인 -> 실행",
             style="Header.TLabel",
             font=("Segoe UI", 10),
         ).pack(side=LEFT, padx=(16, 0))
@@ -183,17 +184,20 @@ class CSTVibeGUI:
             "원점 기준으로 x+ 방향과 y- 방향으로 실을 만들고 대칭 이동해서 ㅁ자를 만들어줘. 단위는 um, GHz.",
         )
 
+        ttk.Label(parent, textvariable=self.param_summary, style="Muted.TLabel").grid(
+            row=2, column=0, sticky="ew", pady=(0, 8)
+        )
+
         actions = ttk.Frame(parent, style="Panel.TFrame")
-        actions.grid(row=2, column=0, sticky="ew")
+        actions.grid(row=3, column=0, sticky="ew")
         actions.columnconfigure(0, weight=1)
 
         buttons = [
-            ("대사 -> JSON 만들기", self.convert_request_with_llm, "Accent.TButton"),
-            ("기본 유닛셀 값 입력", self.open_wizard, "TButton"),
-            ("실행 전 확인", self.preflight_check, "TButton"),
+            ("1. 대사 적용", self.apply_request_to_wizard, "Accent.TButton"),
+            ("2. 실행 전 확인", self.preflight_check, "TButton"),
+            ("3. CST 실행 + 결과폴더", self.run_rf_package_cst, "Accent.TButton"),
             ("파라미터 스윕", self.open_sweep_dialog, "TButton"),
             ("CST 2025 연결 테스트", self.run_connection_test, "TButton"),
-            ("CST 실행 + 결과폴더", self.run_rf_package_cst, "Accent.TButton"),
             ("문제 진단", self.run_diagnostics, "TButton"),
         ]
         for row, (label, command, style) in enumerate(buttons):
@@ -202,12 +206,14 @@ class CSTVibeGUI:
             )
 
         utility = ttk.Frame(parent, style="Panel.TFrame")
-        utility.grid(row=3, column=0, sticky="ew", pady=(12, 0))
+        utility.grid(row=4, column=0, sticky="ew", pady=(12, 0))
         for i in range(3):
             utility.columnconfigure(i, weight=1)
-        ttk.Button(utility, text="JSON 보기", command=lambda: self.notebook.select(1)).grid(row=0, column=0, sticky="ew", padx=(0, 4))
-        ttk.Button(utility, text="리포트 저장", command=self.save_output_report).grid(row=0, column=1, sticky="ew", padx=4)
-        ttk.Button(utility, text="출력 복사", command=self.copy_output).grid(row=0, column=2, sticky="ew", padx=(4, 0))
+        ttk.Button(utility, text="숫자 직접 입력", command=self.open_wizard).grid(row=0, column=0, sticky="ew", padx=(0, 4))
+        ttk.Button(utility, text="JSON 보기", command=lambda: self.notebook.select(1)).grid(row=0, column=1, sticky="ew", padx=4)
+        ttk.Button(utility, text="대사 -> JSON", command=self.convert_request_with_llm).grid(row=0, column=2, sticky="ew", padx=(4, 0))
+        ttk.Button(utility, text="리포트 저장", command=self.save_output_report).grid(row=1, column=0, sticky="ew", padx=(0, 4), pady=(6, 0))
+        ttk.Button(utility, text="출력 복사", command=self.copy_output).grid(row=1, column=1, sticky="ew", padx=4, pady=(6, 0))
 
     def build_result_panel(self, parent: ttk.Frame) -> None:
         top = ttk.Frame(parent, style="Panel.TFrame")
@@ -267,7 +273,12 @@ class CSTVibeGUI:
         self.plan_text.delete("1.0", END)
         self.plan_text.insert("1.0", text)
         self.plan_source.set("wizard")
-        self.status.set("기본 포트 없는 유닛셀 예제를 불러왔습니다.")
+        try:
+            self.sync_wizard_from_plan(json.loads(text))
+        except Exception:
+            pass
+        self.update_param_summary()
+        self.status.set("기본 모기장 유닛셀 예제를 불러왔습니다.")
 
     def open_settings(self) -> None:
         win = Toplevel(self.root)
@@ -319,12 +330,12 @@ class CSTVibeGUI:
         for row, (key, var) in enumerate(self.wizard_vars.items()):
             ttk.Label(frm, text=labels[key]).grid(row=row, column=0, sticky="w", pady=4)
             ttk.Entry(frm, textvariable=var).grid(row=row, column=1, sticky="ew", pady=4)
-        ttk.Checkbutton(frm, text="유닛셀 경계조건 포함", variable=self.include_boundary).grid(
+        ttk.Checkbutton(frm, text="x/y 유닛셀 경계조건 포함", variable=self.include_boundary).grid(
             row=len(labels), column=1, sticky="w", pady=8
         )
         ttk.Label(
             frm,
-            text="기본값은 포트와 solver를 만들지 않습니다.",
+            text="기본값은 x/y unit cell, z open입니다. 포트와 solver는 만들지 않습니다.",
             foreground=self.colors["muted"],
         ).grid(row=len(labels) + 1, column=0, columnspan=2, sticky="w", pady=(4, 10))
 
@@ -339,6 +350,53 @@ class CSTVibeGUI:
         if self.apply_wizard_plan():
             win.destroy()
             self.notebook.select(1)
+
+    def apply_request_to_wizard(self) -> None:
+        request = self.request_text.get("1.0", "end-1c")
+        found = self.extract_request_values(request)
+        for key, value in found.items():
+            if key in self.wizard_vars:
+                self.wizard_vars[key].set(value)
+        self.include_boundary.set(True)
+        if self.apply_wizard_plan():
+            self.rf_check(show_only=False)
+            self.notebook.select(0)
+            changed = ", ".join(f"{key}={value}" for key, value in found.items()) or "기본값 유지"
+            self.append_output(f"[flow] 대사를 기본 유닛셀 값에 반영했습니다: {changed}\n")
+            self.append_output("[flow] 다음은 '2. 실행 전 확인' 또는 바로 '3. CST 실행 + 결과폴더'를 누르면 됩니다.\n\n")
+            self.status.set("대사 적용 완료")
+
+    def extract_request_values(self, text: str) -> dict[str, str]:
+        found: dict[str, str] = {}
+        aliases = {
+            "length": ["length", "len", "길이", "외곽", "space", "스페이스"],
+            "width": ["width", "w", "폭", "선폭", "실폭"],
+            "thickness": ["thickness", "t", "두께"],
+            "fmin": ["fmin", "시작 주파수", "최소 주파수"],
+            "fmax": ["fmax", "끝 주파수", "최대 주파수"],
+        }
+        for key, names in aliases.items():
+            value = self.find_named_number(text, names)
+            if value is not None:
+                found[key] = value
+
+        ghz_range = re.search(
+            r"([-+]?\d+(?:\.\d+)?)\s*(?:GHz)?\s*(?:부터|에서|~|-|to)\s*([-+]?\d+(?:\.\d+)?)\s*GHz",
+            text,
+            flags=re.IGNORECASE,
+        )
+        if ghz_range:
+            found.setdefault("fmin", ghz_range.group(1))
+            found.setdefault("fmax", ghz_range.group(2))
+        return found
+
+    def find_named_number(self, text: str, names: list[str]) -> str | None:
+        for name in names:
+            pattern = rf"{re.escape(name)}[^\d+\-]{{0,12}}([-+]?\d+(?:\.\d+)?)"
+            match = re.search(pattern, text, flags=re.IGNORECASE)
+            if match:
+                return match.group(1)
+        return None
 
     def open_sweep_dialog(self) -> None:
         self.seed_sweep_defaults()
@@ -647,6 +705,53 @@ class CSTVibeGUI:
         self.plan_text.delete("1.0", END)
         self.plan_text.insert("1.0", json.dumps(plan, ensure_ascii=False, indent=2) + "\n")
         self.plan_source.set(source)
+        self.update_param_summary()
+
+    def sync_wizard_from_plan(self, plan: dict) -> None:
+        params = plan.get("parameters", {})
+        if isinstance(params, dict):
+            for key, var in self.wizard_vars.items():
+                if key in params:
+                    var.set(str(params[key]))
+        commands = plan.get("commands", [])
+        if isinstance(commands, list):
+            self.include_boundary.set(
+                any(isinstance(item, dict) and item.get("op") == "boundary" for item in commands)
+            )
+        self.update_param_summary()
+
+    def ensure_default_boundary(self, plan: dict) -> dict:
+        commands = plan.get("commands")
+        if not isinstance(commands, list):
+            return plan
+        if any(isinstance(item, dict) and item.get("op") == "boundary" for item in commands):
+            return plan
+        boundary = {
+            "op": "boundary",
+            "xmin": "unit cell",
+            "xmax": "unit cell",
+            "ymin": "unit cell",
+            "ymax": "unit cell",
+            "zmin": "open",
+            "zmax": "open",
+        }
+        insert_at = 0
+        for index, item in enumerate(commands):
+            if isinstance(item, dict) and item.get("op") in {"units", "frequency_range"}:
+                insert_at = index + 1
+        commands.insert(insert_at, boundary)
+        return plan
+
+    def update_param_summary(self) -> None:
+        values = self.wizard_values()
+        boundary = "x/y unit cell" if self.include_boundary.get() else "경계조건 없음"
+        self.param_summary.set(
+            "현재 기본값: "
+            f"length={values.get('length')} um, "
+            f"width={values.get('width')} um, "
+            f"thickness={values.get('thickness')} um, "
+            f"{values.get('fmin')}~{values.get('fmax')} GHz, {boundary}"
+        )
 
     def current_plan(self) -> dict:
         data = json.loads(self.plan_text.get("1.0", "end-1c"))
@@ -837,8 +942,11 @@ class CSTVibeGUI:
         threading.Thread(target=worker, daemon=True).start()
 
     def apply_llm_plan(self, plan: dict) -> None:
+        plan = self.ensure_default_boundary(plan)
+        self.sync_wizard_from_plan(plan)
         self.set_plan(plan, source="llm")
         self.append_output("[llm] JSON 변환 완료. 실행 전 확인을 먼저 누르세요.\n")
+        self.append_output("[flow] LLM 결과의 기본 파라미터를 왼쪽 유닛셀 값에도 반영했습니다.\n")
         self.status.set("LLM JSON 변환 완료")
         self.notebook.select(1)
 
