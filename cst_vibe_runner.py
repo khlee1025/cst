@@ -10,7 +10,10 @@ written by hand. Use --dry-run first to inspect the generated CST macros.
 from __future__ import annotations
 
 import argparse
+import copy
+import datetime as dt
 import json
+import re
 import sys
 from pathlib import Path
 from typing import Any, Iterable
@@ -69,6 +72,83 @@ def require(command: dict[str, Any], key: str) -> Any:
 
 def indented(lines: Iterable[str]) -> str:
     return "\n".join(lines)
+
+
+def safe_slug(value: Any, fallback: str = "cst_run") -> str:
+    text = str(value or "").strip().lower()
+    text = re.sub(r"[^a-z0-9가-힣_.-]+", "_", text)
+    text = re.sub(r"_+", "_", text).strip("_.-")
+    return text or fallback
+
+
+def write_json(path: Path, data: Any) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
+def make_run_dir(args: argparse.Namespace, plan: dict[str, Any]) -> Path | None:
+    if args.run_dir:
+        return Path(args.run_dir).resolve()
+    if not args.package_run:
+        return None
+
+    parameters = plan.get("parameters", {})
+    design_id = plan.get("design_id") or plan.get("name") or "patch_unitcell"
+    if isinstance(parameters, dict):
+        suffix_parts = []
+        for key in ("p", "sub_t", "patch_w"):
+            if key in parameters:
+                suffix_parts.append(f"{key}{parameters[key]}")
+        if suffix_parts:
+            design_id = f"{design_id}_{'_'.join(suffix_parts)}"
+
+    timestamp = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
+    return (Path(args.runs_root).resolve() / f"{timestamp}_{safe_slug(design_id)}")
+
+
+def prepare_run_package(plan: dict[str, Any], args: argparse.Namespace) -> Path | None:
+    run_dir = make_run_dir(args, plan)
+    if run_dir is None:
+        return None
+
+    run_dir.mkdir(parents=True, exist_ok=True)
+    (run_dir / "exports").mkdir(exist_ok=True)
+    (run_dir / "logs").mkdir(exist_ok=True)
+
+    project = plan.setdefault("project", {"mode": "new"})
+    if not isinstance(project, dict):
+        raise PlanError("project must be an object.")
+    project["save_as"] = str(run_dir / "cst_project.cst")
+
+    parameters = plan.get("parameters", {})
+    commands = plan.get("commands", [])
+    write_json(run_dir / "input_plan.json", plan)
+    write_json(run_dir / "design_params.json", parameters if isinstance(parameters, dict) else {})
+    write_json(
+        run_dir / "summary.json",
+        {
+            "status": "prepared",
+            "source": "cst",
+            "tool": "CST Vibe Runner",
+            "run_dir": str(run_dir),
+            "cst_project": "cst_project.cst",
+            "parameters_file": "design_params.json",
+            "input_plan_file": "input_plan.json",
+            "exports_dir": "exports",
+            "command_count": len(commands) if isinstance(commands, list) else None,
+            "notes": [
+                "This package is the standard handoff format for later CST-vs-Python comparison.",
+                "Put exported CST result files such as Touchstone or CSV under exports/.",
+            ],
+        },
+    )
+    (run_dir / "exports" / "README.txt").write_text(
+        "Place CST exported results here, for example sparameters.s2p, s11.csv, s21.csv.\n",
+        encoding="utf-8",
+    )
+    print(f"[package] Run folder: {run_dir}")
+    print(f"[package] CST project target: {run_dir / 'cst_project.cst'}")
+    return run_dir
 
 
 class CSTSession:
@@ -493,6 +573,8 @@ def execute_sweep(session: CSTSession, command: dict[str, Any]) -> None:
 
 
 def run_plan(plan: dict[str, Any], args: argparse.Namespace) -> None:
+    plan = copy.deepcopy(plan)
+    run_dir = prepare_run_package(plan, args)
     project = plan.get("project", {"mode": "new"})
     if not isinstance(project, dict):
         raise PlanError("project must be an object.")
@@ -520,7 +602,39 @@ def run_plan(plan: dict[str, Any], args: argparse.Namespace) -> None:
         print("\n=== Diagnostic summary ===", file=sys.stderr)
         for item in session.errors:
             print(f"- {item}", file=sys.stderr)
+        if run_dir is not None:
+            write_json(
+                run_dir / "summary.json",
+                {
+                    "status": "failed",
+                    "source": "cst",
+                    "tool": "CST Vibe Runner",
+                    "run_dir": str(run_dir),
+                    "cst_project": "cst_project.cst",
+                    "parameters_file": "design_params.json",
+                    "input_plan_file": "input_plan.json",
+                    "exports_dir": "exports",
+                    "errors": session.errors,
+                },
+            )
         raise PlanError(f"{len(session.errors)} command(s) failed. See diagnostic summary above.")
+
+    if run_dir is not None:
+        write_json(
+            run_dir / "summary.json",
+            {
+                "status": "dry_run_completed" if args.dry_run else "completed",
+                "source": "cst",
+                "tool": "CST Vibe Runner",
+                "run_dir": str(run_dir),
+                "cst_project": "cst_project.cst",
+                "parameters_file": "design_params.json",
+                "input_plan_file": "input_plan.json",
+                "exports_dir": "exports",
+                "result_files": {},
+            },
+        )
+        print(f"[package] Summary updated: {run_dir / 'summary.json'}")
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
@@ -532,6 +646,22 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         "--continue-on-error",
         action="store_true",
         help="Diagnostic mode: keep running later commands after a command fails.",
+    )
+    parser.add_argument(
+        "--package-run",
+        action="store_true",
+        help="Create a standard runs/<timestamp> package for CST-vs-Python comparison.",
+    )
+    parser.add_argument(
+        "--run-dir",
+        type=Path,
+        help="Create/use this exact run folder and write input_plan/design_params/summary there.",
+    )
+    parser.add_argument(
+        "--runs-root",
+        type=Path,
+        default=Path("runs"),
+        help="Root folder for --package-run. Default: runs",
     )
     parser.add_argument(
         "--prog-id",

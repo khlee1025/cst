@@ -48,6 +48,7 @@ README.md
 MANUAL.md
 DESIGN_GUIDE.md
 DEBUG_WORKFLOW.md
+RF_RUN_PACKAGE.md
 cst_vibe_gui.py
 cst_vibe_runner.py
 prompt_for_local_llm.md
@@ -124,6 +125,9 @@ GUI가 열리면 다음 순서로 쓰면 됩니다.
 - `형상 JSON 만들기`: LLM 없이 기본 유닛셀 JSON을 자동 생성합니다.
 - `Step Diagnose`: 실패해도 다음 명령을 계속 실행해서 통과/실패 지점을 모읍니다.
 - `Save Report`: 실행 출력 전체를 텍스트 리포트로 저장합니다.
+- `RF Check`: 현재 JSON의 기본 치수/위험 명령을 검사합니다.
+- `RF Package`: CST 없이 표준 run 폴더와 summary를 만듭니다.
+- `RF Run`: 표준 run 폴더를 만들고 CST 실행까지 시도합니다.
 
 처음 확인 순서는 `CST 연동 테스트` -> `드라이런` -> `CST 실행`이 가장 안전합니다.
 

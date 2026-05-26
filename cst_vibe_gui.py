@@ -231,6 +231,7 @@ class CSTVibeGUI:
         ).pack(anchor="w")
         ttk.Button(parent, text="예제 불러오기", command=self.load_example).pack(fill=X, pady=(8, 4))
         ttk.Button(parent, text="JSON 정렬", command=self.format_json).pack(fill=X, pady=4)
+        ttk.Button(parent, text="RF Check", command=self.validate_current_plan).pack(fill=X, pady=4)
         ttk.Button(parent, text="Save Report", command=self.save_output_report).pack(fill=X, pady=4)
         ttk.Button(parent, text="출력 복사", command=self.copy_output).pack(fill=X, pady=4)
         ttk.Button(parent, text="출력 지우기", command=self.clear_output).pack(fill=X, pady=4)
@@ -257,6 +258,8 @@ class CSTVibeGUI:
             side=LEFT, padx=6
         )
         ttk.Button(toolbar, text="Step Diagnose", command=self.run_diagnostics).pack(side=LEFT, padx=6)
+        ttk.Button(toolbar, text="RF Package", command=self.run_rf_package_dry).pack(side=LEFT, padx=6)
+        ttk.Button(toolbar, text="RF Run", command=self.run_rf_package_cst).pack(side=LEFT, padx=6)
 
         ttk.Button(toolbar, text="CST 실행", style="Accent.TButton", command=self.run_cst).pack(
             side=RIGHT, padx=(6, 0)
@@ -387,6 +390,61 @@ class CSTVibeGUI:
         self.plan_text.insert("1.0", formatted + "\n")
         self.set_status("JSON을 보기 좋게 정렬했습니다.")
 
+    def validate_current_plan(self) -> None:
+        try:
+            plan = json.loads(self.current_plan_text())
+        except json.JSONDecodeError as exc:
+            messagebox.showerror("JSON 오류", f"{exc.msg}\nline {exc.lineno}, column {exc.colno}")
+            return
+
+        messages = ["=== RF Check ==="]
+        params = plan.get("parameters", {})
+        commands = plan.get("commands", [])
+        if not isinstance(params, dict):
+            messages.append("[error] parameters must be an object.")
+            params = {}
+        if not isinstance(commands, list):
+            messages.append("[error] commands must be a list.")
+            commands = []
+
+        def as_float(key: str) -> float | None:
+            try:
+                return float(params[key])
+            except Exception:
+                return None
+
+        p = as_float("p")
+        patch_w = as_float("patch_w")
+        sub_t = as_float("sub_t")
+        copper_t = as_float("copper_t")
+        fmin = as_float("fmin")
+        fmax = as_float("fmax")
+        if p is not None and patch_w is not None and patch_w >= p:
+            messages.append("[error] patch_w must be smaller than p.")
+        if sub_t is not None and sub_t <= 0:
+            messages.append("[error] sub_t must be positive.")
+        if copper_t is not None and copper_t <= 0:
+            messages.append("[error] copper_t must be positive.")
+        if fmin is not None and fmax is not None and fmax <= fmin:
+            messages.append("[error] fmax must be greater than fmin.")
+
+        ops = [item.get("op") for item in commands if isinstance(item, dict)]
+        if "discrete_port" in ops:
+            messages.append("[warn] discrete_port is present. Verify port type/location manually in CST.")
+        if "solver_start" in ops:
+            messages.append("[warn] solver_start is present. Use only after geometry and setup are confirmed.")
+        if "boundary" in ops:
+            messages.append("[info] boundary is present. For first geometry checks, consider disabling it.")
+        brick_count = ops.count("brick")
+        messages.append(f"[info] command_count={len(commands)}, brick_count={brick_count}")
+        if len(messages) == 2 and messages[1].startswith("[info]"):
+            messages.append("[ok] No basic RF geometry issues found.")
+
+        self.clear_output()
+        self.append_output("\n".join(messages) + "\n")
+        self.notebook.select(1)
+        self.set_status("RF Check 완료")
+
     def apply_wizard_plan(self) -> bool:
         try:
             plan = self.build_wizard_plan()
@@ -506,6 +564,20 @@ class CSTVibeGUI:
             dry_run=False,
             mode_label="Step Diagnose",
             extra_args=["--continue-on-error"],
+        )
+
+    def run_rf_package_dry(self) -> None:
+        self.run_plan(
+            dry_run=True,
+            mode_label="RF Package Dry Run",
+            extra_args=["--package-run"],
+        )
+
+    def run_rf_package_cst(self) -> None:
+        self.run_plan(
+            dry_run=False,
+            mode_label="RF Package CST Run",
+            extra_args=["--package-run", "--continue-on-error"],
         )
 
     def run_connection_test(self) -> None:

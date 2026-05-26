@@ -2,5 +2,6 @@ __pycache__/
 *.py[cod]
 .cst_vibe_gui_last_plan.json
 output/
+runs/
 .venv/
 venv/
