@@ -204,6 +204,14 @@ runs/
 
 그 다음 해석은 CST 안에서 `Setup Solver`의 `Start`를 눌러 진행합니다. 사용자가 CST에서 solver 조건을 눈으로 확인하고 시작하는 흐름을 기본으로 둡니다.
 
+형상 생성이 끝나면 `다음 작업` 팝업이 뜹니다.
+
+```text
+그냥 돌리기: CST에서 Setup Solver -> Start
+스윕 설정하기: CST Parametric Sweep 사용
+S11/S21 정리하기
+```
+
 ### S11/S21 정리
 
 CST에서 solver를 돌린 뒤 export한 `.s2p` 또는 CSV/TXT 결과를 한 번에 모읍니다.

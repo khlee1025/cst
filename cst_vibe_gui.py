@@ -87,6 +87,7 @@ class CSTVibeGUI:
 
         self.running = False
         self.output_queue: queue.Queue[str | None] = queue.Queue()
+        self.after_run_action: str | None = None
 
         self.colors = {
             "bg": "#f5f7fb",
@@ -1080,6 +1081,7 @@ class CSTVibeGUI:
             return
         self.append_output("[flow] CST에 형상만 만들고 저장은 건너뜁니다.\n")
         self.append_output("[flow] 형상이 뜨면 CST 안에서 Setup Solver의 Start를 눌러 해석하세요.\n\n")
+        self.after_run_action = "geometry_next"
         self.run_plan(False, mode_label="CST에 형상 만들기", extra_args=["--continue-on-error", "--no-project-save"])
 
     def collect_sparams_dialog(self) -> None:
@@ -1102,6 +1104,63 @@ class CSTVibeGUI:
         self.append_output(f"\n$ {' '.join(cmd)}\n\n")
         threading.Thread(target=self.worker, args=(cmd, "S11/S21 정리", []), daemon=True).start()
         self.root.after(80, self.drain_output_queue)
+
+    def open_after_geometry_dialog(self) -> None:
+        win = Toplevel(self.root)
+        win.title("다음 작업")
+        win.geometry("520x330")
+        win.transient(self.root)
+        win.grab_set()
+        frm = ttk.Frame(win, padding=18)
+        frm.pack(fill=BOTH, expand=True)
+        frm.columnconfigure(0, weight=1)
+
+        ttk.Label(
+            frm,
+            text="형상 생성이 끝났습니다",
+            font=("Segoe UI Semibold", 14),
+        ).grid(row=0, column=0, sticky="w", pady=(0, 8))
+        ttk.Label(
+            frm,
+            text="이제 CST 화면에서 solver를 바로 시작하거나, 스윕 조건을 설정하거나, 이미 export한 결과를 정리할 수 있습니다.",
+            wraplength=470,
+            foreground=self.colors["muted"],
+        ).grid(row=1, column=0, sticky="ew", pady=(0, 14))
+
+        ttk.Button(
+            frm,
+            text="그냥 돌리기: CST에서 Setup Solver -> Start",
+            style="Accent.TButton",
+            command=lambda: self.show_solver_start_hint(win),
+        ).grid(row=2, column=0, sticky="ew", pady=4)
+        ttk.Button(
+            frm,
+            text="스윕 설정하기: CST Parametric Sweep 사용",
+            command=lambda: self.show_cst_sweep_hint(win),
+        ).grid(row=3, column=0, sticky="ew", pady=4)
+        ttk.Button(
+            frm,
+            text="S11/S21 정리하기",
+            command=lambda: (win.destroy(), self.collect_sparams_dialog()),
+        ).grid(row=4, column=0, sticky="ew", pady=4)
+        ttk.Button(frm, text="닫기", command=win.destroy).grid(row=5, column=0, sticky="ew", pady=(14, 0))
+
+    def show_solver_start_hint(self, win: Toplevel) -> None:
+        win.destroy()
+        self.append_output("[next] CST 화면에서 Setup Solver -> Start를 눌러 단일 해석을 시작하세요.\n")
+        self.append_output("[next] 해석이 끝나면 S-parameter를 .s2p로 export하고, S11/S21 정리를 누르면 됩니다.\n\n")
+        self.status.set("CST에서 Setup Solver Start")
+
+    def show_cst_sweep_hint(self, win: Toplevel) -> None:
+        win.destroy()
+        self.append_output("[next] CST 내부 Parametric Sweep을 설정하세요.\n")
+        self.append_output("[next] 현재 Python은 형상 치수를 숫자로 넘기므로, CST 내부 sweep을 쓰려면 CST에서 sweep용 파라미터/식 설정이 필요합니다.\n")
+        self.append_output("[next] 해석 결과를 .s2p 또는 CSV로 export한 뒤 S11/S21 정리를 누르면 됩니다.\n\n")
+        messagebox.showinfo(
+            "CST 내부 스윕",
+            "CST에서 Parametric Sweep을 설정한 뒤 Setup Solver의 Start를 누르세요.\n"
+            "현재 도구는 형상 생성과 결과 정리를 담당합니다.",
+        )
 
     def run_rf_package_cst(self) -> None:
         if not self.sync_wizard_parameters_if_needed():
@@ -1202,6 +1261,9 @@ class CSTVibeGUI:
         if finished:
             self.mark_not_running()
             self.status.set("완료")
+            if self.after_run_action == "geometry_next":
+                self.after_run_action = None
+                self.root.after(100, self.open_after_geometry_dialog)
             return
         self.root.after(80, self.drain_output_queue)
 
