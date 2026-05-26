@@ -72,10 +72,12 @@ def indented(lines: Iterable[str]) -> str:
 
 
 class CSTSession:
-    def __init__(self, dry_run: bool, prog_id: str, visible: bool) -> None:
+    def __init__(self, dry_run: bool, prog_id: str, visible: bool, continue_on_error: bool = False) -> None:
         self.dry_run = dry_run
         self.prog_id = prog_id
         self.visible = visible
+        self.continue_on_error = continue_on_error
+        self.errors: list[str] = []
         self.cst = None
         self.mws = None
 
@@ -427,34 +429,47 @@ MACRO_BUILDERS = {
 
 def execute_commands(session: CSTSession, commands: list[Any]) -> None:
     for index, raw in enumerate(commands, start=1):
-        if not isinstance(raw, dict):
-            raise PlanError(f"commands[{index}] must be an object.")
-        command = raw
-        op = command.get("op")
-        if not isinstance(op, str):
-            raise PlanError(f"commands[{index}] requires string field 'op'.")
+        op = raw.get("op") if isinstance(raw, dict) else "<invalid>"
+        try:
+            execute_one_command(session, raw, index)
+            print(f"[ok] commands[{index}] op={op}")
+        except Exception as exc:
+            message = f"commands[{index}] op={op} failed: {exc}"
+            if not session.continue_on_error:
+                raise
+            session.errors.append(message)
+            print(f"\n[diagnostic-error] {message}\n", file=sys.stderr)
 
-        if op == "vba_history":
-            name = str(command.get("name", f"custom macro {index}"))
-            code = require(command, "code")
-            session.add_history(name, str(code))
-        elif op == "parameter":
-            session.store_parameter(str(require(command, "name")), require(command, "value"))
-        elif op == "rebuild":
-            session.rebuild()
-        elif op == "save":
-            if "path" in command:
-                session.save_as(command["path"])
-            else:
-                session.save()
-        elif op == "sweep":
-            execute_sweep(session, command)
-        elif op in MACRO_BUILDERS:
-            name, code = MACRO_BUILDERS[op](command)
-            session.add_history(str(command.get("name_for_history", name)), code)
+
+def execute_one_command(session: CSTSession, raw: Any, index: int) -> None:
+    if not isinstance(raw, dict):
+        raise PlanError(f"commands[{index}] must be an object.")
+    command = raw
+    op = command.get("op")
+    if not isinstance(op, str):
+        raise PlanError(f"commands[{index}] requires string field 'op'.")
+
+    if op == "vba_history":
+        name = str(command.get("name", f"custom macro {index}"))
+        code = require(command, "code")
+        session.add_history(name, str(code))
+    elif op == "parameter":
+        session.store_parameter(str(require(command, "name")), require(command, "value"))
+    elif op == "rebuild":
+        session.rebuild()
+    elif op == "save":
+        if "path" in command:
+            session.save_as(command["path"])
         else:
-            allowed = ", ".join(sorted([*MACRO_BUILDERS.keys(), "parameter", "rebuild", "save", "sweep", "vba_history"]))
-            raise PlanError(f"Unknown op '{op}'. Allowed ops: {allowed}")
+            session.save()
+    elif op == "sweep":
+        execute_sweep(session, command)
+    elif op in MACRO_BUILDERS:
+        name, code = MACRO_BUILDERS[op](command)
+        session.add_history(str(command.get("name_for_history", name)), code)
+    else:
+        allowed = ", ".join(sorted([*MACRO_BUILDERS.keys(), "parameter", "rebuild", "save", "sweep", "vba_history"]))
+        raise PlanError(f"Unknown op '{op}'. Allowed ops: {allowed}")
 
 
 def execute_sweep(session: CSTSession, command: dict[str, Any]) -> None:
@@ -482,7 +497,7 @@ def run_plan(plan: dict[str, Any], args: argparse.Namespace) -> None:
     if not isinstance(project, dict):
         raise PlanError("project must be an object.")
 
-    session = CSTSession(args.dry_run, args.prog_id, args.visible)
+    session = CSTSession(args.dry_run, args.prog_id, args.visible, args.continue_on_error)
     session.connect_project(project)
 
     parameters = plan.get("parameters", {})
@@ -501,12 +516,23 @@ def run_plan(plan: dict[str, Any], args: argparse.Namespace) -> None:
     elif project.get("save", False):
         session.save()
 
+    if session.errors:
+        print("\n=== Diagnostic summary ===", file=sys.stderr)
+        for item in session.errors:
+            print(f"- {item}", file=sys.stderr)
+        raise PlanError(f"{len(session.errors)} command(s) failed. See diagnostic summary above.")
+
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run CST command plans through COM.")
     parser.add_argument("plan", type=Path, help="Path to a JSON/YAML CST command plan.")
     parser.add_argument("--dry-run", action="store_true", help="Print generated actions without opening CST.")
     parser.add_argument("--visible", action="store_true", help="Ask CST to show its UI during execution.")
+    parser.add_argument(
+        "--continue-on-error",
+        action="store_true",
+        help="Diagnostic mode: keep running later commands after a command fails.",
+    )
     parser.add_argument(
         "--prog-id",
         default="CSTStudio.Application",

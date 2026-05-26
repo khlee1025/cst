@@ -47,6 +47,7 @@ cd cst
 README.md
 MANUAL.md
 DESIGN_GUIDE.md
+DEBUG_WORKFLOW.md
 cst_vibe_gui.py
 cst_vibe_runner.py
 prompt_for_local_llm.md
@@ -121,6 +122,8 @@ GUI가 열리면 다음 순서로 쓰면 됩니다.
 - `드라이런`: CST를 열지 않고 JSON이 어떤 CST 매크로로 바뀌는지 봅니다.
 - `CST 실행`: 실제 CST에 매크로를 넣고 실행합니다.
 - `형상 JSON 만들기`: LLM 없이 기본 유닛셀 JSON을 자동 생성합니다.
+- `Step Diagnose`: 실패해도 다음 명령을 계속 실행해서 통과/실패 지점을 모읍니다.
+- `Save Report`: 실행 출력 전체를 텍스트 리포트로 저장합니다.
 
 처음 확인 순서는 `CST 연동 테스트` -> `드라이런` -> `CST 실행`이 가장 안전합니다.
 

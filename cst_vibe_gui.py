@@ -231,6 +231,7 @@ class CSTVibeGUI:
         ).pack(anchor="w")
         ttk.Button(parent, text="예제 불러오기", command=self.load_example).pack(fill=X, pady=(8, 4))
         ttk.Button(parent, text="JSON 정렬", command=self.format_json).pack(fill=X, pady=4)
+        ttk.Button(parent, text="Save Report", command=self.save_output_report).pack(fill=X, pady=4)
         ttk.Button(parent, text="출력 복사", command=self.copy_output).pack(fill=X, pady=4)
         ttk.Button(parent, text="출력 지우기", command=self.clear_output).pack(fill=X, pady=4)
 
@@ -255,6 +256,7 @@ class CSTVibeGUI:
         ttk.Button(toolbar, text="CST 연동 테스트", command=self.run_connection_test).pack(
             side=LEFT, padx=6
         )
+        ttk.Button(toolbar, text="Step Diagnose", command=self.run_diagnostics).pack(side=LEFT, padx=6)
 
         ttk.Button(toolbar, text="CST 실행", style="Accent.TButton", command=self.run_cst).pack(
             side=RIGHT, padx=(6, 0)
@@ -499,6 +501,13 @@ class CSTVibeGUI:
     def run_cst(self) -> None:
         self.run_plan(dry_run=False)
 
+    def run_diagnostics(self) -> None:
+        self.run_plan(
+            dry_run=False,
+            mode_label="Step Diagnose",
+            extra_args=["--continue-on-error"],
+        )
+
     def run_connection_test(self) -> None:
         plan_text = json.dumps(
             {
@@ -516,6 +525,7 @@ class CSTVibeGUI:
         dry_run: bool,
         plan_text: str | None = None,
         mode_label: str | None = None,
+        extra_args: list[str] | None = None,
     ) -> None:
         if self.running:
             messagebox.showinfo("실행 중", "이미 실행 중입니다.")
@@ -539,6 +549,8 @@ class CSTVibeGUI:
             cmd.append("--dry-run")
         elif self.visible.get():
             cmd.append("--visible")
+        if extra_args:
+            cmd.extend(extra_args)
 
         self.running = True
         self.clear_output()
@@ -604,6 +616,27 @@ class CSTVibeGUI:
         self.root.clipboard_clear()
         self.root.clipboard_append(text)
         self.set_status("실행 출력을 클립보드에 복사했습니다.")
+
+    def save_output_report(self) -> None:
+        text = self.output_text.get("1.0", "end-1c")
+        if not text.strip():
+            messagebox.showinfo("No output", "Run dry-run, CST execution, or Step Diagnose first.")
+            return
+        path = filedialog.asksaveasfilename(
+            title="Save diagnostic report",
+            initialdir=str(APP_DIR),
+            initialfile="cst_vibe_diagnostic_report.txt",
+            defaultextension=".txt",
+            filetypes=[("Text", "*.txt"), ("All files", "*.*")],
+        )
+        if not path:
+            return
+        try:
+            Path(path).write_text(text, encoding="utf-8")
+        except OSError as exc:
+            messagebox.showerror("Save failed", str(exc))
+            return
+        self.set_status(f"진단 리포트 저장됨: {path}")
 
     def set_status(self, text: str) -> None:
         self.status.set(text)

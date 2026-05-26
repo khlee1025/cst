@@ -10,11 +10,14 @@
 
 회사 LLM과 왔다 갔다 하기 불편하면 GUI 왼쪽의 `설계 마법사`를 쓰면 됩니다. 기본 유닛셀은 숫자만 넣어도 JSON을 자동 생성합니다.
 
+오류가 반복될 때는 [DEBUG_WORKFLOW.md](./DEBUG_WORKFLOW.md)를 보세요. `Step Diagnose`와 `Save Report`로 실패 지점을 한 번에 모으는 방법을 정리했습니다.
+
 ## 지금 들어있는 것
 
 ```text
 MANUAL.md                         # 친절한 사용 설명서
 DESIGN_GUIDE.md                   # 초심자용 설계 가이드
+DEBUG_WORKFLOW.md                 # 오류 진단/리포트 저장 흐름
 cst_vibe_gui.py                    # GUI 실행 파일
 cst_vibe_runner.py                 # JSON/YAML 명령서 실행기
 prompt_for_local_llm.md            # 로컬 LLM에 넣을 프롬프트
