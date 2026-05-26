@@ -167,6 +167,12 @@ def resolve_command_numbers(command: dict[str, Any], context: dict[str, float]) 
             for item in nested:
                 if isinstance(item, dict):
                     resolve_command_numbers(item, context)
+    elif op == "case_sweep":
+        nested = require(command, "commands")
+        if isinstance(nested, list):
+            for item in nested:
+                if isinstance(item, dict):
+                    resolve_command_numbers(item, context)
 
 
 def resolve_plan_numbers(commands: list[Any], context: dict[str, float]) -> None:
@@ -638,6 +644,45 @@ def macro_discrete_port(command: dict[str, Any]) -> tuple[str, str]:
     return f"create discrete port {name}", indented(lines)
 
 
+def macro_floquet_port(command: dict[str, Any]) -> tuple[str, str]:
+    modes = command.get("modes", command.get("mode_count", 2))
+    theta = command.get("theta", 0)
+    phi = command.get("phi", 0)
+    polarization_angle = command.get("polarization_angle", 0)
+    ports = command.get("ports", ["Zmin", "Zmax"])
+    if not isinstance(ports, list) or not ports:
+        raise PlanError("floquet_port.ports must be a non-empty list.")
+
+    lines = [
+        "With FloquetPort",
+        "    .Reset",
+        f"    .SetDialogTheta {q(theta)}",
+        f"    .SetDialogPhi {q(phi)}",
+        f"    .SetPolarizationIndependentOfScanAnglePhi {q(polarization_angle)}, {q(False)}",
+        '    .SetSortCode "+beta/pw"',
+        f"    .SetCustomizedListFlag {q(False)}",
+    ]
+    for port in ports:
+        lines.extend(
+            [
+                f"    .Port {q(port)}",
+                f"    .SetNumberOfModesConsidered {q(modes)}",
+                '    .SetDistanceToReferencePlane "0.0"',
+                f"    .SetUseCircularPolarization {q(False)}",
+            ]
+        )
+    lines.extend(
+        [
+            "End With",
+            "With Boundary",
+            f"    .SetPeriodicBoundaryAngles {q(theta)}, {q(phi)}",
+            '    .SetPeriodicBoundaryAnglesDirection "outward"',
+            "End With",
+        ]
+    )
+    return f"set floquet port modes {modes}", indented(lines)
+
+
 def macro_solver_start(command: dict[str, Any]) -> tuple[str, str]:
     solver = command.get("solver")
     if solver == "frequency":
@@ -671,6 +716,7 @@ MACRO_BUILDERS = {
     "cylinder": macro_cylinder,
     "boolean": macro_boolean,
     "discrete_port": macro_discrete_port,
+    "floquet_port": macro_floquet_port,
     "solver_start": macro_solver_start,
     "export_touchstone": macro_export_touchstone,
 }
@@ -713,11 +759,13 @@ def execute_one_command(session: CSTSession, raw: Any, index: int) -> None:
             session.save()
     elif op == "sweep":
         execute_sweep(session, command)
+    elif op == "case_sweep":
+        execute_case_sweep(session, command)
     elif op in MACRO_BUILDERS:
         name, code = MACRO_BUILDERS[op](command)
         session.add_history(str(command.get("name_for_history", name)), code)
     else:
-        allowed = ", ".join(sorted([*MACRO_BUILDERS.keys(), "parameter", "rebuild", "save", "sweep", "vba_history"]))
+        allowed = ", ".join(sorted([*MACRO_BUILDERS.keys(), "case_sweep", "parameter", "rebuild", "save", "sweep", "vba_history"]))
         raise PlanError(f"Unknown op '{op}'. Allowed ops: {allowed}")
 
 
@@ -741,6 +789,44 @@ def execute_sweep(session: CSTSession, command: dict[str, Any]) -> None:
             session.save_as(path)
 
 
+def format_case_value(value: Any, data: dict[str, Any]) -> Any:
+    if isinstance(value, str):
+        try:
+            return value.format(**data)
+        except KeyError:
+            return value
+    if isinstance(value, list):
+        return [format_case_value(item, data) for item in value]
+    if isinstance(value, dict):
+        return {key: format_case_value(item, data) for key, item in value.items()}
+    return value
+
+
+def case_slug(updates: dict[str, Any]) -> str:
+    return "_".join(f"{safe_slug(key)}{safe_slug(value)}" for key, value in updates.items()) or "case"
+
+
+def execute_case_sweep(session: CSTSession, command: dict[str, Any]) -> None:
+    cases = require(command, "cases")
+    nested = require(command, "commands")
+    if not isinstance(cases, list) or not cases:
+        raise PlanError("case_sweep.cases must be a non-empty list.")
+    if not isinstance(nested, list):
+        raise PlanError("case_sweep.commands must be a list.")
+
+    for index, raw_case in enumerate(cases, start=1):
+        if not isinstance(raw_case, dict):
+            raise PlanError("Each case_sweep case must be an object.")
+        slug = case_slug(raw_case)
+        print(f"[case_sweep] case {index}/{len(cases)}: {raw_case}")
+        for name, value in raw_case.items():
+            session.store_parameter(str(name), value)
+        session.rebuild()
+        data = {"case_index": f"{index:03d}", "case_number": index, "case_slug": slug, **raw_case}
+        for nested_index, nested_command in enumerate(nested, start=1):
+            execute_one_command(session, format_case_value(copy.deepcopy(nested_command), data), nested_index)
+
+
 def run_plan(plan: dict[str, Any], args: argparse.Namespace) -> None:
     plan = copy.deepcopy(plan)
     run_dir = prepare_run_package(plan, args)
@@ -762,8 +848,11 @@ def run_plan(plan: dict[str, Any], args: argparse.Namespace) -> None:
     if numeric_context:
         for name, value in numeric_context.items():
             print(f"[param] {name} = {fmt_number(value)}")
-        resolve_plan_numbers(commands, numeric_context)
-        print("[param] CST macro expressions resolved to numbers; no New Parameter dialog is needed.")
+        if args.keep_expressions:
+            print("[param] CST parameter expressions kept for solver/sweep automation.")
+        else:
+            resolve_plan_numbers(commands, numeric_context)
+            print("[param] CST macro expressions resolved to numbers; no New Parameter dialog is needed.")
     if args.store_parameters:
         for name, value in parameters.items():
             session.store_parameter(str(name), value)
@@ -850,6 +939,11 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         "--store-parameters",
         action="store_true",
         help="Also create CST parameters with StoreParameter. Off by default to avoid CST New Parameter popups.",
+    )
+    parser.add_argument(
+        "--keep-expressions",
+        action="store_true",
+        help="Keep parameter expressions such as length-width in CST macros. Use with --store-parameters for sweeps.",
     )
     parser.add_argument(
         "--no-project-save",

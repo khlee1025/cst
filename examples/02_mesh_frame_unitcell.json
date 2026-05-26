@@ -33,6 +33,13 @@
       "zmax": "open"
     },
     {
+      "op": "floquet_port",
+      "modes": "2",
+      "ports": ["Zmin", "Zmax"],
+      "theta": "0",
+      "phi": "0"
+    },
+    {
       "op": "brick",
       "name": "thread_top_x",
       "component": "unitcell",

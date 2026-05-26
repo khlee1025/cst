@@ -126,11 +126,11 @@ CST를 열지 않고 검증합니다.
 
 ### 3. CST 해석 + 결과 보기
 
-메인 3단계 버튼입니다. CST를 열고 형상/경계조건을 만든 뒤 기본 Frequency Solver Start를 실행합니다.
+메인 3단계 버튼입니다. CST를 열고 형상/경계조건/Floquet port를 만든 뒤 기본 Frequency Solver Start를 실행합니다.
 
 해석이 끝나면 `exports/sparameters.s2p`로 export하고, 오른쪽 `S11/S21 결과` 탭에 요약을 보여줍니다.
 
-주의: S11/S21은 CST 안에 포트 또는 Floquet 모드가 있어야 생성됩니다. 결과 탭에 데이터가 없다고 나오면 CST 결과 트리에 S-Parameters가 생겼는지 먼저 확인하세요.
+Floquet mode number 기본값은 `2`이고, `Zmin`/`Zmax`에 적용합니다.
 
 ```text
 runs/날짜_시간_mesh_frame_unitcell/
@@ -156,7 +156,7 @@ fmin=1
 fmax=18
 ```
 
-`스윕 실행 + 결과 보기`를 누르면 케이스별 CST 해석을 돌리고 마지막에 S11/S21을 한 표로 합칩니다.
+`스윕 실행 + 결과 보기`를 누르면 같은 CST 프로젝트 안에서 파라미터 값을 바꾸고, 각 케이스마다 Solver Start를 실행한 뒤 마지막에 S11/S21을 한 표로 합칩니다.
 
 ### 결과 불러오기
 

@@ -34,6 +34,7 @@ z 방향: 0 -> thickness
 | `thickness` | z축 두께 | 2 um |
 | `fmin` | 시작 주파수 | 1 GHz |
 | `fmax` | 끝 주파수 | 18 GHz |
+| `floquet_modes` | Floquet mode number | 2 |
 
 ## 체크 기준
 
@@ -43,17 +44,17 @@ z 방향: 0 -> thickness
 - `width < length / 2`
 - `fmin < fmax`
 - 기본 경계조건은 x/y `unit cell`, z `open`
+- 기본 Floquet port는 `Zmin`/`Zmax`, mode number `2`
 
 `width`가 너무 크면 가운데 빈 공간이 사라집니다.
 
 ## 추천 작업 흐름
 
 ```text
-기본 유닛셀 값 입력
+숫자 직접 입력 또는 대사 적용
 -> 실행 전 확인
--> CST 2025 연결 테스트
--> CST 실행 + 결과폴더
--> CST에서 ㅁ자 형상 확인
+-> CST 해석 + 결과 보기
+-> S11/S21 결과 확인
 ```
 
-처음에는 포트와 solver 자동 실행을 넣지 않는 것을 추천합니다. 형상이 맞는 것을 먼저 확인한 뒤 Floquet port, periodic boundary, solver 조건을 추가하는 편이 안전합니다.
+기본 실행은 Floquet port를 만든 뒤 Solver Start까지 자동으로 보냅니다. 스윕은 같은 CST 프로젝트 안에서 파라미터 값을 바꾸고 Solver Start를 반복합니다.

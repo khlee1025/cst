@@ -79,6 +79,7 @@ class CSTVibeGUI:
             "fmax": StringVar(value="18"),
         }
         self.include_boundary = BooleanVar(value=True)
+        self.floquet_modes = StringVar(value="2")
         self.sweep_parameter = StringVar(value="width")
         self.sweep_values = StringVar(value="5, 10, 15")
         self.param_summary = StringVar(value="")
@@ -424,21 +425,23 @@ class CSTVibeGUI:
         for row, (key, var) in enumerate(self.wizard_vars.items()):
             ttk.Label(frm, text=labels[key]).grid(row=row, column=0, sticky="w", pady=4)
             ttk.Entry(frm, textvariable=var).grid(row=row, column=1, sticky="ew", pady=4)
+        ttk.Label(frm, text="Floquet mode number").grid(row=len(labels), column=0, sticky="w", pady=4)
+        ttk.Entry(frm, textvariable=self.floquet_modes).grid(row=len(labels), column=1, sticky="ew", pady=4)
         ttk.Checkbutton(frm, text="x/y 유닛셀 경계조건 포함", variable=self.include_boundary).grid(
-            row=len(labels), column=1, sticky="w", pady=8
+            row=len(labels) + 1, column=1, sticky="w", pady=8
         )
         ttk.Label(
             frm,
-            text="기본값은 x/y unit cell, z open입니다. 해석 버튼은 Frequency Solver Start와 Touchstone export까지 실행합니다.",
+            text="기본값은 x/y unit cell, z open, Floquet modes=2입니다. 해석 버튼은 Solver Start와 Touchstone export까지 실행합니다.",
             foreground=self.colors["muted"],
-        ).grid(row=len(labels) + 1, column=0, columnspan=2, sticky="w", pady=(4, 10))
+        ).grid(row=len(labels) + 2, column=0, columnspan=2, sticky="w", pady=(4, 10))
 
         ttk.Button(
             frm,
             text="JSON 만들기",
             style="Accent.TButton",
             command=lambda: self.apply_wizard_from_dialog(win),
-        ).grid(row=len(labels) + 2, column=0, columnspan=2, sticky="ew")
+        ).grid(row=len(labels) + 3, column=0, columnspan=2, sticky="ew")
 
     def apply_wizard_from_dialog(self, win: Toplevel) -> None:
         if self.apply_wizard_plan():
@@ -660,39 +663,47 @@ class CSTVibeGUI:
         if not isinstance(params, dict):
             raise ValueError("parameters는 object여야 합니다.")
 
-        commands: list[list[str]] = []
-        cleanup_files: list[Path] = []
-        for index, updates in enumerate(cases, start=1):
-            plan = copy.deepcopy(base_plan)
-            plan_params = plan.setdefault("parameters", {})
-            if not isinstance(plan_params, dict):
-                raise ValueError("parameters는 object여야 합니다.")
-            for key, value in updates.items():
+        for updates in cases:
+            for key in updates:
                 if key not in params:
                     raise ValueError(f"현재 JSON parameters에 '{key}'가 없습니다.")
-                plan_params[key] = value
 
-            base_id = str(plan.get("design_id") or plan.get("name") or "mesh_frame_unitcell")
-            case_slug = "_".join(f"{key}{self.safe_slug(value)}" for key, value in updates.items())
-            plan["design_id"] = f"{base_id}_{case_slug}"
-            case_dir = sweep_root / f"case_{index:03d}_{self.safe_slug(case_slug)}"
-            export_path = None if dry_run else case_dir / "exports" / "sparameters.s2p"
-            plan = self.prepare_solver_plan(plan, export_path)
+        plan = copy.deepcopy(base_plan)
+        plan = self.prepare_solver_plan(plan, None)
+        plan["design_id"] = f"{plan.get('design_id') or 'mesh_frame_unitcell'}_sweep"
+        plan_commands = plan.get("commands")
+        if not isinstance(plan_commands, list):
+            raise ValueError("commands는 list여야 합니다.")
+        base_commands = [
+            item
+            for item in plan_commands
+            if not (isinstance(item, dict) and item.get("op") in {"solver_start", "export_touchstone"})
+        ]
+        export_template = str(sweep_root / "exports" / "case_{case_index}_{case_slug}.s2p")
+        base_commands.append(
+            {
+                "op": "case_sweep",
+                "cases": cases,
+                "commands": [
+                    {"op": "solver_start", "solver": "frequency"},
+                    {"op": "export_touchstone", "path": export_template, "impedance": 50},
+                ],
+            }
+        )
+        plan["commands"] = base_commands
 
-            plan_path = self.write_runtime_plan(
-                json.dumps(plan, ensure_ascii=False, indent=2) + "\n",
-                f"sweep_{index:03d}_{self.safe_slug(case_slug)}",
-            )
-            cleanup_files.append(plan_path)
-            cmd = [sys.executable, str(RUNNER), str(plan_path), "--prog-id", self.prog_id.get().strip()]
-            if dry_run:
-                cmd.extend(["--dry-run", "--no-project-save"])
-            elif self.visible.get():
-                cmd.append("--visible")
-            if not dry_run:
-                cmd.extend(["--run-dir", str(case_dir)])
-            commands.append(cmd)
-        return commands, cleanup_files
+        plan_path = self.write_runtime_plan(
+            json.dumps(plan, ensure_ascii=False, indent=2) + "\n",
+            f"sweep_{self.safe_slug(plan['design_id'])}",
+        )
+        cmd = [sys.executable, str(RUNNER), str(plan_path), "--prog-id", self.prog_id.get().strip(), "--store-parameters", "--keep-expressions"]
+        if dry_run:
+            cmd.extend(["--dry-run", "--no-project-save"])
+        elif self.visible.get():
+            cmd.append("--visible")
+        if not dry_run:
+            cmd.extend(["--run-dir", str(sweep_root)])
+        return [cmd], [plan_path]
 
     def sweep_worker(self, commands: list[list[str]], mode: str, cleanup_files: list[Path]) -> None:
         worst_code = 0
@@ -735,6 +746,12 @@ class CSTVibeGUI:
             raise ValueError("width는 length의 절반보다 작아야 ㅁ자 빈 공간이 생깁니다.")
         if numeric["fmax"] <= numeric["fmin"]:
             raise ValueError("fmax는 fmin보다 커야 합니다.")
+        try:
+            modes = int(self.floquet_modes.get().strip())
+        except ValueError as exc:
+            raise ValueError("Floquet mode number는 정수여야 합니다.") from exc
+        if modes <= 0:
+            raise ValueError("Floquet mode number는 1 이상이어야 합니다.")
         return values
 
     def build_wizard_plan(self) -> dict:
@@ -755,6 +772,15 @@ class CSTVibeGUI:
                     "zmax": "open",
                 }
             )
+        commands.append(
+            {
+                "op": "floquet_port",
+                "modes": self.floquet_modes.get().strip() or "2",
+                "ports": ["Zmin", "Zmax"],
+                "theta": "0",
+                "phi": "0",
+            }
+        )
         commands.extend(
             [
                 {
@@ -832,6 +858,10 @@ class CSTVibeGUI:
             self.include_boundary.set(
                 any(isinstance(item, dict) and item.get("op") == "boundary" for item in commands)
             )
+            for item in commands:
+                if isinstance(item, dict) and item.get("op") == "floquet_port":
+                    self.floquet_modes.set(str(item.get("modes", item.get("mode_count", "2"))))
+                    break
         self.update_param_summary()
 
     def ensure_default_boundary(self, plan: dict) -> dict:
@@ -856,6 +886,26 @@ class CSTVibeGUI:
         commands.insert(insert_at, boundary)
         return plan
 
+    def ensure_default_floquet(self, plan: dict) -> dict:
+        commands = plan.get("commands")
+        if not isinstance(commands, list):
+            return plan
+        if any(isinstance(item, dict) and item.get("op") == "floquet_port" for item in commands):
+            return plan
+        floquet = {
+            "op": "floquet_port",
+            "modes": self.floquet_modes.get().strip() or "2",
+            "ports": ["Zmin", "Zmax"],
+            "theta": "0",
+            "phi": "0",
+        }
+        insert_at = 0
+        for index, item in enumerate(commands):
+            if isinstance(item, dict) and item.get("op") == "boundary":
+                insert_at = index + 1
+        commands.insert(insert_at, floquet)
+        return plan
+
     def update_param_summary(self) -> None:
         values = self.wizard_values()
         boundary = "x/y unit cell" if self.include_boundary.get() else "경계조건 없음"
@@ -864,7 +914,8 @@ class CSTVibeGUI:
             f"length={values.get('length')} um, "
             f"width={values.get('width')} um, "
             f"thickness={values.get('thickness')} um, "
-            f"{values.get('fmin')}~{values.get('fmax')} GHz, {boundary}"
+            f"{values.get('fmin')}~{values.get('fmax')} GHz, {boundary}, "
+            f"Floquet modes={self.floquet_modes.get().strip() or '2'}"
         )
 
     def current_plan(self) -> dict:
@@ -880,6 +931,7 @@ class CSTVibeGUI:
     def prepare_solver_plan(self, base_plan: dict, export_path: Path | None) -> dict:
         plan = copy.deepcopy(base_plan)
         plan = self.ensure_default_boundary(plan)
+        plan = self.ensure_default_floquet(plan)
         commands = plan.get("commands")
         if not isinstance(commands, list):
             raise ValueError("commands는 list여야 합니다.")
@@ -962,7 +1014,9 @@ class CSTVibeGUI:
         ops = [item.get("op") for item in commands if isinstance(item, dict)]
         if "discrete_port" in ops:
             messages.append("[warn] discrete_port가 있습니다. 포트 위치를 CST에서 확인하세요.")
-        if "discrete_port" not in ops:
+        if "floquet_port" in ops:
+            messages.append("[ok] Floquet port 설정이 있습니다. 기본 mode number는 2입니다.")
+        elif "discrete_port" not in ops:
             messages.append("[warn] 현재 JSON에는 S-parameter용 포트/Floquet 설정이 없습니다. CST가 S11/S21을 만들지 못할 수 있습니다.")
         if "solver_start" in ops:
             messages.append("[warn] solver_start가 있습니다. 형상 확인 후 실행하는 것을 권장합니다.")
@@ -1109,14 +1163,13 @@ class CSTVibeGUI:
 
         self.pending_result_dir = run_dir
         self.after_run_action = "collect_results"
-        self.append_output("[flow] CST에서 형상을 만들고 기본 Frequency Solver Start를 실행합니다.\n")
+        self.append_output("[flow] CST에서 형상 + Floquet modes=2를 만들고 Frequency Solver Start를 실행합니다.\n")
         self.append_output(f"[flow] 해석 후 S-parameter export: {export_path}\n\n")
-        self.append_output("[note] S11/S21이 안 보이면 CST에 포트/Floquet 설정이 없어서 s2p가 생성되지 않은 경우가 많습니다.\n\n")
         self.run_plan(
             False,
             plan_text=json.dumps(plan, ensure_ascii=False, indent=2) + "\n",
             mode_label="CST 해석 + 결과 보기",
-            extra_args=["--run-dir", str(run_dir)],
+            extra_args=["--run-dir", str(run_dir), "--store-parameters", "--keep-expressions"],
         )
 
     def collect_sparams_dialog(self) -> None:
@@ -1202,8 +1255,8 @@ class CSTVibeGUI:
                     "",
                     "가능성이 큰 원인:",
                     "- CST solver가 끝나기 전에 export가 시도됐거나 solver가 실패했습니다.",
-                    "- 현재 기본 유닛셀은 형상과 unit cell 경계조건 중심이라 S-parameter용 포트/Floquet 모드가 아직 없을 수 있습니다.",
-                    "- S11/S21은 포트 또는 Floquet 모드가 있어야 CST가 계산/export할 수 있습니다.",
+                    "- Floquet port 설정은 들어갔지만 CST에서 해당 모델/solver 조건을 거부했을 수 있습니다.",
+                    "- CST 결과 트리에 S-Parameters가 생기지 않으면 Touchstone export도 비어 있을 수 있습니다.",
                     "",
                     "지금 할 수 있는 확인:",
                     "- CST 화면에서 해석 결과 트리에 S-Parameters가 생겼는지 확인",

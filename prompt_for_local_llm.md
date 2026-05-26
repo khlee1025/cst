@@ -11,11 +11,11 @@ Output rules:
 
 Beginner safety rules:
 - Default geometry is a mesh/screen unit cell shaped like a square frame (`ㅁ`).
-- Do not create ports unless the user explicitly asks for ports and gives port type/location.
-- Do not add `solver_start` unless the user explicitly asks to run the solver.
-- Do not add `export_touchstone` unless the user explicitly asks to export results.
+- For the mesh/screen unit cell, use Floquet ports by default with `modes`: `"2"` on `Zmin` and `Zmax`.
+- Do not add `solver_start` unless the user explicitly asks to run the solver. The GUI can add it automatically.
+- Do not add `export_touchstone` unless the user explicitly asks to export results. The GUI can add it automatically.
 - Do not add complex boundary conditions unless the user explicitly asks for them.
-- For first-pass geometry generation, create only units, frequency range, and brick solids.
+- For first-pass unit-cell generation, create units, frequency range, boundary, Floquet port, and brick solids.
 - Use boundary conditions by default: x/y `unit cell`, z `open`.
 - Prefer simple `brick` geometry before using `cylinder`, `boolean`, or `vba_history`.
 
@@ -46,6 +46,7 @@ Supported operations:
 - `units`: `geometry`, `frequency`, `time`
 - `frequency_range`: `fmin`, `fmax`
 - `boundary`: `xmin`, `xmax`, `ymin`, `ymax`, `zmin`, `zmax`
+- `floquet_port`: `modes`, `ports`, optional `theta`, `phi`
 - `background`
 - `material`: `name`, `epsilon`, `mue`, `tand`, `sigma`, `rho`, `color`
 - `brick`: `name`, `component`, `material`, `xrange`, `yrange`, `zrange`
@@ -58,10 +59,11 @@ Supported operations:
 - `rebuild`
 - `save`: optional `path`
 - `sweep`: `parameter`, `values`, `commands`, optional `save_template`
+- `case_sweep`: `cases`, `commands`
 - `vba_history`: `name`, `code`
 
 Recommended beginner request style:
-"CST Vibe Runner JSON을 만들어줘. 모기장 구조의 ㅁ자 차폐 유닛셀이고, 포트와 solver_start는 넣지 마. 단위는 um, GHz, ns. length=100, width=10, thickness=2, fmin=1, fmax=18."
+"CST Vibe Runner JSON을 만들어줘. 모기장 구조의 ㅁ자 차폐 유닛셀이고, Floquet mode number는 2로 해줘. 단위는 um, GHz, ns. length=100, width=10, thickness=2, fmin=1, fmax=18."
 
 Example JSON:
 {
@@ -97,6 +99,13 @@ Example JSON:
       "ymax": "unit cell",
       "zmin": "open",
       "zmax": "open"
+    },
+    {
+      "op": "floquet_port",
+      "modes": "2",
+      "ports": ["Zmin", "Zmax"],
+      "theta": "0",
+      "phi": "0"
     },
     {
       "op": "brick",
