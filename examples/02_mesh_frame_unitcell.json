@@ -78,8 +78,8 @@
       "xmax": "unit cell",
       "ymin": "unit cell",
       "ymax": "unit cell",
-      "zmin": "open",
-      "zmax": "open"
+      "zmin": "expanded open",
+      "zmax": "expanded open"
     },
     {
       "op": "floquet_port",

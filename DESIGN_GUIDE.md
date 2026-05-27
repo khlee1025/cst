@@ -44,7 +44,7 @@ z 방향: 0 -> thickness
 - `thickness > 0`
 - `width < length / 2`
 - `fmin < fmax`
-- 기본 경계조건은 x/y `unit cell`, z `open`
+- 기본 경계조건은 x/y `unit cell`, z `open add space`입니다. JSON/매크로 값은 `expanded open`을 씁니다.
 - 기본 Floquet port는 `Zmin`/`Zmax`, mode number `2`
 
 `width`가 너무 크면 가운데 빈 공간이 사라집니다.

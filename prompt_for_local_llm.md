@@ -18,7 +18,7 @@ Beginner safety rules:
 - Do not add `export_touchstone` unless the user explicitly asks to export results. The GUI can add it automatically.
 - Do not add complex boundary conditions unless the user explicitly asks for them.
 - For first-pass unit-cell generation, create units, solver type, background, frequency range, boundary, Floquet port, and brick solids.
-- Use boundary conditions by default: x/y `unit cell`, z `open`.
+- Use boundary conditions by default: x/y `unit cell`, z `expanded open`. This is CST's macro value for GUI `Open (add space)`.
 - Prefer simple `brick` geometry before using `cylinder`, `boolean`, or `vba_history`.
 
 Default mesh unit cell rules:
@@ -149,8 +149,8 @@ Example JSON:
       "xmax": "unit cell",
       "ymin": "unit cell",
       "ymax": "unit cell",
-      "zmin": "open",
-      "zmax": "open"
+      "zmin": "expanded open",
+      "zmax": "expanded open"
     },
     {
       "op": "floquet_port",

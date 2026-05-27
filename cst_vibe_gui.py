@@ -440,7 +440,7 @@ class CSTVibeGUI:
         )
         ttk.Label(
             frm,
-            text="기본값은 Background Normal, x/y unit cell, z open, Floquet modes=2, Time Domain solver입니다.",
+            text="기본값은 Background Normal, x/y unit cell, z open add space, Floquet modes=2, Time Domain solver입니다.",
             foreground=self.colors["muted"],
         ).grid(row=len(labels) + 3, column=0, columnspan=2, sticky="w", pady=(4, 10))
 
@@ -819,8 +819,8 @@ class CSTVibeGUI:
                     "xmax": "unit cell",
                     "ymin": "unit cell",
                     "ymax": "unit cell",
-                    "zmin": "open",
-                    "zmax": "open",
+                    "zmin": "expanded open",
+                    "zmax": "expanded open",
                 }
             )
         commands.extend(
@@ -890,8 +890,8 @@ class CSTVibeGUI:
             "xmax": "unit cell",
             "ymin": "unit cell",
             "ymax": "unit cell",
-            "zmin": "open",
-            "zmax": "open",
+            "zmin": "expanded open",
+            "zmax": "expanded open",
         }
         insert_at = 0
         for index, item in enumerate(commands):
@@ -1075,9 +1075,9 @@ class CSTVibeGUI:
         else:
             messages.append("[warn] Background 설정이 없습니다. 실행 시 기본 Normal 배경을 자동 추가합니다.")
         if "boundary" in ops:
-            messages.append("[ok] Boundary 설정이 있습니다. 기본은 x/y unit cell, z open입니다.")
+            messages.append("[ok] Boundary 설정이 있습니다. 기본은 x/y unit cell, z open add space입니다.")
         else:
-            messages.append("[warn] Boundary 설정이 없습니다. 실행 시 기본 unit cell/open 경계를 자동 추가합니다.")
+            messages.append("[warn] Boundary 설정이 없습니다. 실행 시 기본 unit cell/open add space 경계를 자동 추가합니다.")
         if "solver_type" in ops:
             solver_types = [
                 str(item.get("type", ""))
@@ -1265,8 +1265,8 @@ class CSTVibeGUI:
                         "xmax": "unit cell",
                         "ymin": "unit cell",
                         "ymax": "unit cell",
-                        "zmin": "open",
-                        "zmax": "open",
+                        "zmin": "expanded open",
+                        "zmax": "expanded open",
                     },
                     {
                         "op": "floquet_port",

@@ -683,12 +683,30 @@ def macro_boundary(command: dict[str, Any]) -> tuple[str, str]:
     lines = ["With Boundary"]
     for key, cst_name in aliases.items():
         if key in command:
-            lines.append(f"    .{cst_name} {q(command[key])}")
+            lines.append(f"    .{cst_name} {q(normalize_boundary_value(command[key]))}")
     if "apply_in_all_directions" in command:
         value = "True" if command["apply_in_all_directions"] else "False"
         lines.append(f"    .ApplyInAllDirections {q(value)}")
     lines.append("End With")
     return "set boundary conditions", indented(lines)
+
+
+def normalize_boundary_value(value: Any) -> Any:
+    if not isinstance(value, str):
+        return value
+    normalized = re.sub(r"[\s_()\-]+", " ", value.strip().lower()).strip()
+    open_add_aliases = {
+        "open add",
+        "open add space",
+        "open added space",
+        "open with add space",
+        "open with added space",
+        "open pml add space",
+        "expanded open",
+    }
+    if normalized in open_add_aliases:
+        return "expanded open"
+    return value
 
 
 def macro_background(command: dict[str, Any]) -> tuple[str, str]:

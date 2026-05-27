@@ -5,7 +5,7 @@
 ## Unit Cell 기본 해석
 
 - 모기장/차폐 유닛셀은 x/y 방향을 `unit cell`로 둡니다.
-- z 방향은 `open`으로 두고, 주파수 영역 해석에서는 Floquet port를 기본으로 씁니다.
+- z 방향은 GUI 기준 `Open (add space)`로 두고, 매크로/JSON 값은 `expanded open`을 씁니다.
 - Floquet mode number 기본값은 `2`입니다.
 - 기본 포트 위치는 `Zmin`, `Zmax`입니다.
 
@@ -50,7 +50,7 @@ Solver.Start
 
 새 프로젝트에서는 solver start 전에 기본으로 `ChangeSolverType "HF Time Domain"`을 넣습니다. GUI의 숫자 입력 창에서 `HF Frequency Domain`으로 바꿀 수 있습니다.
 
-기본 배경/경계조건은 `Background Normal, epsilon=1, mue=1`, x/y `unit cell`, z `open`입니다. LLM이 이 항목을 빼먹어도 GUI가 실행 전에 자동으로 보정합니다.
+기본 배경/경계조건은 `Background Normal, epsilon=1, mue=1`, x/y `unit cell`, z `Open (add space)`입니다. JSON/매크로 값은 `expanded open`이며, LLM이 이 항목을 빼먹어도 GUI가 실행 전에 자동으로 보정합니다.
 
 러너에서는 `solver_start`를 일반 형상 명령처럼 `AddToHistory`에만 넣지 않고, CST 자료의 `solver = invoke(mws, 'Solver')`, `invoke(solver, 'Start')` 패턴처럼 solver 객체를 먼저 얻고 `Start()`를 직접 호출합니다. 실패할 때만 `AddToHistory` 매크로 방식으로 fallback합니다.
 
