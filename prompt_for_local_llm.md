@@ -44,6 +44,7 @@ Default mesh unit cell rules:
 
 Supported operations:
 - `units`: `geometry`, `frequency`, `time`
+- `solver_type`: optional, use `{"op":"solver_type","type":"HF Frequency Domain"}` for the default mesh unit-cell simulation
 - `frequency_range`: `fmin`, `fmax`
 - `boundary`: `xmin`, `xmax`, `ymin`, `ymax`, `zmin`, `zmax`
 - `floquet_port`: `modes`, `ports`, optional `theta`, `phi`
@@ -85,6 +86,10 @@ Example JSON:
       "geometry": "um",
       "frequency": "GHz",
       "time": "ns"
+    },
+    {
+      "op": "solver_type",
+      "type": "HF Frequency Domain"
     },
     {
       "op": "frequency_range",

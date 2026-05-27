@@ -301,6 +301,8 @@ class CSTSession:
             print(f"[dry-run] COM Dispatch: {self.prog_id}")
             if mode == "open":
                 print(f"[dry-run] Open CST project: {Path(path).resolve() if path else path}")
+            elif mode == "active":
+                print("[dry-run] Attach to current active CST Microwave Studio project")
             else:
                 print("[dry-run] Create new CST Microwave Studio project")
             return
@@ -326,8 +328,26 @@ class CSTSession:
             self.mws = self.cst.OpenFile(str(Path(path).resolve()))
         elif mode == "new":
             self.mws = self.cst.NewMWS()
+        elif mode == "active":
+            self.mws = self.active_3d_project()
         else:
-            raise PlanError("project.mode must be 'new' or 'open'.")
+            raise PlanError("project.mode must be 'new', 'open', or 'active'.")
+
+    def active_3d_project(self) -> Any:
+        errors: list[str] = []
+        for method_name in ("Active3D", "ActiveMWS"):
+            try:
+                project = getattr(self.cst, method_name)()
+                if project is not None:
+                    print(f"[cst] Attached to current CST project via {method_name}")
+                    return project
+            except Exception as exc:
+                errors.append(f"{method_name} failed: {exc}")
+        raise PlanError(
+            "Could not attach to the currently open CST project. "
+            "Open or create a Microwave Studio project first.\n"
+            + "\n".join(errors)
+        )
 
     def dispatch_cst(self, win32com: Any) -> Any:
         candidates = [self.prog_id]
@@ -495,14 +515,27 @@ class CSTSession:
         if hasattr(attr, "Start") or hasattr(attr, "start"):
             return attr
         try:
+            import pythoncom  # type: ignore
+
             return self.mws._oleobj_.Invoke(
                 self.mws._oleobj_.GetIDsOfNames(object_name),
                 0,
-                2,
+                pythoncom.DISPATCH_METHOD,
                 False,
             )
         except Exception as exc:
-            errors.append(f"raw COM object invoke failed: {exc}")
+            errors.append(f"raw COM method invoke failed: {exc}")
+        try:
+            import pythoncom  # type: ignore
+
+            return self.mws._oleobj_.Invoke(
+                self.mws._oleobj_.GetIDsOfNames(object_name),
+                0,
+                pythoncom.DISPATCH_PROPERTYGET,
+                False,
+            )
+        except Exception as exc:
+            errors.append(f"raw COM property invoke failed: {exc}")
         raise PlanError("; ".join(errors))
 
     def save(self) -> None:
@@ -557,6 +590,11 @@ def macro_frequency_range(command: dict[str, Any]) -> tuple[str, str]:
     fmin = require(command, "fmin")
     fmax = require(command, "fmax")
     return "set frequency range", f"Solver.FrequencyRange {q(fmin)}, {q(fmax)}"
+
+
+def macro_solver_type(command: dict[str, Any]) -> tuple[str, str]:
+    solver_type = command.get("type", "HF Frequency Domain")
+    return "set solver type", f"ChangeSolverType {q(solver_type)}"
 
 
 def macro_boundary(command: dict[str, Any]) -> tuple[str, str]:
@@ -751,12 +789,12 @@ def macro_floquet_port(command: dict[str, Any]) -> tuple[str, str]:
 def macro_solver_start(command: dict[str, Any]) -> tuple[str, str]:
     solver = command.get("solver")
     if solver == "frequency_direct":
-        return "start frequency solver", "FDSolver.Start"
+        return "start frequency solver", indented(["With FDSolver", "    .Start", "End With"])
     if solver == "frequency":
-        return "start solver", "Solver.Start"
+        return "start solver", indented(["With Solver", "    .Start", "End With"])
     if solver == "time":
-        return "start time solver", "Solver.Start"
-    return "start solver", "Solver.Start"
+        return "start time solver", indented(["With Solver", "    .Start", "End With"])
+    return "start solver", indented(["With Solver", "    .Start", "End With"])
 
 
 def macro_export_touchstone(command: dict[str, Any]) -> tuple[str, str]:
@@ -776,6 +814,7 @@ def macro_export_touchstone(command: dict[str, Any]) -> tuple[str, str]:
 MACRO_BUILDERS = {
     "units": macro_units,
     "frequency_range": macro_frequency_range,
+    "solver_type": macro_solver_type,
     "boundary": macro_boundary,
     "background": macro_background,
     "material": macro_material,

@@ -19,6 +19,10 @@
       "time": "ns"
     },
     {
+      "op": "solver_type",
+      "type": "HF Frequency Domain"
+    },
+    {
       "op": "frequency_range",
       "fmin": "fmin",
       "fmax": "fmax"

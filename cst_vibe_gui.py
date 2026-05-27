@@ -205,7 +205,7 @@ class CSTVibeGUI:
         buttons = [
             ("1. 대사 적용", self.apply_request_to_wizard, "Accent.TButton"),
             ("2. 실행 전 확인", self.preflight_check, "TButton"),
-            ("3. CST 해석 + 결과 보기", self.run_solve_and_collect, "Accent.TButton"),
+            ("3. 시뮬레이션 시작 + S11/S21", self.run_solve_and_collect, "Accent.TButton"),
         ]
         for row, (label, command, style) in enumerate(buttons):
             ttk.Button(actions, text=label, command=command, style=style).grid(
@@ -217,7 +217,7 @@ class CSTVibeGUI:
         for i in range(3):
             utility.columnconfigure(i, weight=1)
         ttk.Button(utility, text="숫자 직접 입력", command=self.open_wizard).grid(row=0, column=0, sticky="ew", padx=(0, 4))
-        ttk.Button(utility, text="스윕 설정", command=self.open_sweep_dialog).grid(row=0, column=1, sticky="ew", padx=4)
+        ttk.Button(utility, text="현재 CST만 Start", command=self.run_active_solver_and_collect).grid(row=0, column=1, sticky="ew", padx=4)
         ttk.Button(utility, text="결과 불러오기", command=self.collect_sparams_dialog).grid(row=0, column=2, sticky="ew", padx=(4, 0))
 
     def build_result_panel(self, parent: ttk.Frame) -> None:
@@ -758,6 +758,7 @@ class CSTVibeGUI:
         values = self.validate_wizard_values()
         commands: list[dict] = [
             {"op": "units", "geometry": "um", "frequency": "GHz", "time": "ns"},
+            {"op": "solver_type", "type": "HF Frequency Domain"},
             {"op": "frequency_range", "fmin": "fmin", "fmax": "fmax"},
         ]
         commands.extend(
@@ -909,6 +910,20 @@ class CSTVibeGUI:
         commands.insert(insert_at, floquet)
         return plan
 
+    def ensure_default_solver_type(self, plan: dict) -> dict:
+        commands = plan.get("commands")
+        if not isinstance(commands, list):
+            return plan
+        if any(isinstance(item, dict) and item.get("op") == "solver_type" for item in commands):
+            return plan
+        solver_type = {"op": "solver_type", "type": "HF Frequency Domain"}
+        insert_at = 0
+        for index, item in enumerate(commands):
+            if isinstance(item, dict) and item.get("op") == "units":
+                insert_at = index + 1
+        commands.insert(insert_at, solver_type)
+        return plan
+
     def update_param_summary(self) -> None:
         values = self.wizard_values()
         boundary = "x/y unit cell" if self.include_boundary.get() else "경계조건 없음"
@@ -933,6 +948,7 @@ class CSTVibeGUI:
 
     def prepare_solver_plan(self, base_plan: dict, export_path: Path | None) -> dict:
         plan = copy.deepcopy(base_plan)
+        plan = self.ensure_default_solver_type(plan)
         plan = self.ensure_default_boundary(plan)
         plan = self.ensure_default_floquet(plan)
         commands = plan.get("commands")
@@ -1173,6 +1189,36 @@ class CSTVibeGUI:
             plan_text=json.dumps(plan, ensure_ascii=False, indent=2) + "\n",
             mode_label="CST 해석 + 결과 보기",
             extra_args=["--run-dir", str(run_dir)],
+        )
+
+    def run_active_solver_and_collect(self) -> None:
+        try:
+            run_dir = self.make_run_dir("active_cst_solver")
+            export_path = run_dir / "exports" / "sparameters.s2p"
+            plan = {
+                "design_id": "active_cst_solver",
+                "project": {"mode": "active"},
+                "parameters": {},
+                "commands": [
+                    {"op": "solver_type", "type": "HF Frequency Domain"},
+                    {"op": "rebuild"},
+                    {"op": "solver_start", "solver": "frequency"},
+                    {"op": "export_touchstone", "path": str(export_path), "impedance": 50},
+                ],
+            }
+        except Exception as exc:
+            messagebox.showerror("시뮬레이션 준비 실패", str(exc))
+            return
+
+        self.pending_result_dir = run_dir
+        self.after_run_action = "collect_results"
+        self.append_output("[flow] 현재 열려 있는 CST 프로젝트에 붙어서 Solver Start를 실행합니다.\n")
+        self.append_output(f"[flow] 해석 후 S-parameter export: {export_path}\n\n")
+        self.run_plan(
+            False,
+            plan_text=json.dumps(plan, ensure_ascii=False, indent=2) + "\n",
+            mode_label="현재 CST Solver Start",
+            extra_args=["--run-dir", str(run_dir), "--visible"],
         )
 
     def collect_sparams_dialog(self) -> None:

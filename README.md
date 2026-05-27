@@ -97,9 +97,9 @@ length=100, width=10, thickness=2, fmin=1, fmax=18
 
 CST를 열지 않고 JSON, 치수, 주파수 범위, CST에 보낼 매크로를 확인합니다.
 
-### 3. CST 해석 + 결과 보기
+### 3. 시뮬레이션 시작 + S11/S21
 
-기본 메인 실행 버튼입니다. CST를 열고 형상/경계조건/Floquet port를 만든 뒤 CST의 `Setup Solver -> Start`에 해당하는 `Solver.Start`를 실행하고, Touchstone `.s2p`를 export합니다.
+기본 메인 실행 버튼입니다. CST를 열고 형상/경계조건/Floquet port를 만든 뒤 `HF Frequency Domain` solver type을 지정하고, CST의 `Setup Solver -> Start`에 해당하는 Solver Start를 실행합니다. 해석이 끝나면 Touchstone `.s2p`를 export합니다.
 
 해석이 끝나면 오른쪽 `S11/S21 결과` 탭에 요약이 바로 표시됩니다.
 
@@ -112,6 +112,16 @@ runs/
     exports/sparameters.s2p
     s11_s21_summary.csv
 ```
+
+### 현재 CST만 Start
+
+이미 CST 창에 형상이 만들어져 있는데 solver만 안 돈 것 같으면 이 버튼을 누릅니다.
+
+- 새 형상을 다시 만들지 않고 현재 열려 있는 CST 3D 프로젝트에 붙습니다.
+- `HF Frequency Domain` solver type을 한 번 더 지정합니다.
+- `Rebuild -> Solver Start -> Touchstone export`만 실행합니다.
+
+즉, “도형은 보이는데 해석이 안 돈다”를 확인할 때 쓰는 버튼입니다.
 
 ### 숫자 직접 입력
 
