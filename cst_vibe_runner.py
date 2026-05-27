@@ -593,7 +593,7 @@ def macro_frequency_range(command: dict[str, Any]) -> tuple[str, str]:
 
 
 def macro_solver_type(command: dict[str, Any]) -> tuple[str, str]:
-    solver_type = command.get("type", "HF Frequency Domain")
+    solver_type = command.get("type", "HF Time Domain")
     return "set solver type", f"ChangeSolverType {q(solver_type)}"
 
 

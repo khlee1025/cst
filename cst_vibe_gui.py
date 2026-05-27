@@ -80,6 +80,7 @@ class CSTVibeGUI:
         }
         self.include_boundary = BooleanVar(value=True)
         self.floquet_modes = StringVar(value="2")
+        self.solver_type = StringVar(value="HF Time Domain")
         self.sweep_parameter = StringVar(value="width")
         self.sweep_values = StringVar(value="5, 10, 15")
         self.param_summary = StringVar(value="")
@@ -427,21 +428,28 @@ class CSTVibeGUI:
             ttk.Entry(frm, textvariable=var).grid(row=row, column=1, sticky="ew", pady=4)
         ttk.Label(frm, text="Floquet mode number").grid(row=len(labels), column=0, sticky="w", pady=4)
         ttk.Entry(frm, textvariable=self.floquet_modes).grid(row=len(labels), column=1, sticky="ew", pady=4)
+        ttk.Label(frm, text="Solver").grid(row=len(labels) + 1, column=0, sticky="w", pady=4)
+        ttk.Combobox(
+            frm,
+            textvariable=self.solver_type,
+            values=("HF Time Domain", "HF Frequency Domain"),
+            state="readonly",
+        ).grid(row=len(labels) + 1, column=1, sticky="ew", pady=4)
         ttk.Checkbutton(frm, text="x/y 유닛셀 경계조건 포함", variable=self.include_boundary).grid(
-            row=len(labels) + 1, column=1, sticky="w", pady=8
+            row=len(labels) + 2, column=1, sticky="w", pady=8
         )
         ttk.Label(
             frm,
-            text="기본값은 x/y unit cell, z open, Floquet modes=2입니다. 해석 버튼은 Solver Start와 Touchstone export까지 실행합니다.",
+            text="기본값은 Background Normal, x/y unit cell, z open, Floquet modes=2, Time Domain solver입니다.",
             foreground=self.colors["muted"],
-        ).grid(row=len(labels) + 2, column=0, columnspan=2, sticky="w", pady=(4, 10))
+        ).grid(row=len(labels) + 3, column=0, columnspan=2, sticky="w", pady=(4, 10))
 
         ttk.Button(
             frm,
             text="JSON 만들기",
             style="Accent.TButton",
             command=lambda: self.apply_wizard_from_dialog(win),
-        ).grid(row=len(labels) + 3, column=0, columnspan=2, sticky="ew")
+        ).grid(row=len(labels) + 4, column=0, columnspan=2, sticky="ew")
 
     def apply_wizard_from_dialog(self, win: Toplevel) -> None:
         if self.apply_wizard_plan():
@@ -685,7 +693,7 @@ class CSTVibeGUI:
                 "op": "case_sweep",
                 "cases": cases,
                 "commands": [
-                    {"op": "solver_start", "solver": "frequency"},
+                    {"op": "solver_start", "solver": self.solver_kind_from_plan(plan)},
                     {"op": "export_touchstone", "path": export_template, "impedance": 50},
                 ],
             }
@@ -758,7 +766,8 @@ class CSTVibeGUI:
         values = self.validate_wizard_values()
         commands: list[dict] = [
             {"op": "units", "geometry": "um", "frequency": "GHz", "time": "ns"},
-            {"op": "solver_type", "type": "HF Frequency Domain"},
+            {"op": "solver_type", "type": self.solver_type.get().strip() or "HF Time Domain"},
+            {"op": "background", "type": "Normal", "epsilon": "1", "mue": "1"},
             {"op": "frequency_range", "fmin": "fmin", "fmax": "fmax"},
         ]
         commands.extend(
@@ -863,9 +872,10 @@ class CSTVibeGUI:
                 any(isinstance(item, dict) and item.get("op") == "boundary" for item in commands)
             )
             for item in commands:
+                if isinstance(item, dict) and item.get("op") == "solver_type":
+                    self.solver_type.set(str(item.get("type", "HF Time Domain")))
                 if isinstance(item, dict) and item.get("op") == "floquet_port":
                     self.floquet_modes.set(str(item.get("modes", item.get("mode_count", "2"))))
-                    break
         self.update_param_summary()
 
     def ensure_default_boundary(self, plan: dict) -> dict:
@@ -910,13 +920,27 @@ class CSTVibeGUI:
         commands.insert(insert_at, floquet)
         return plan
 
+    def ensure_default_background(self, plan: dict) -> dict:
+        commands = plan.get("commands")
+        if not isinstance(commands, list):
+            return plan
+        if any(isinstance(item, dict) and item.get("op") == "background" for item in commands):
+            return plan
+        background = {"op": "background", "type": "Normal", "epsilon": "1", "mue": "1"}
+        insert_at = 0
+        for index, item in enumerate(commands):
+            if isinstance(item, dict) and item.get("op") in {"units", "solver_type"}:
+                insert_at = index + 1
+        commands.insert(insert_at, background)
+        return plan
+
     def ensure_default_solver_type(self, plan: dict) -> dict:
         commands = plan.get("commands")
         if not isinstance(commands, list):
             return plan
         if any(isinstance(item, dict) and item.get("op") == "solver_type" for item in commands):
             return plan
-        solver_type = {"op": "solver_type", "type": "HF Frequency Domain"}
+        solver_type = {"op": "solver_type", "type": self.solver_type.get().strip() or "HF Time Domain"}
         insert_at = 0
         for index, item in enumerate(commands):
             if isinstance(item, dict) and item.get("op") == "units":
@@ -933,6 +957,7 @@ class CSTVibeGUI:
             f"width={values.get('width')} um, "
             f"thickness={values.get('thickness')} um, "
             f"{values.get('fmin')}~{values.get('fmax')} GHz, {boundary}, "
+            f"Background Normal, {self.solver_type.get().strip() or 'HF Time Domain'}, "
             f"Floquet modes={self.floquet_modes.get().strip() or '2'}"
         )
 
@@ -949,6 +974,7 @@ class CSTVibeGUI:
     def prepare_solver_plan(self, base_plan: dict, export_path: Path | None) -> dict:
         plan = copy.deepcopy(base_plan)
         plan = self.ensure_default_solver_type(plan)
+        plan = self.ensure_default_background(plan)
         plan = self.ensure_default_boundary(plan)
         plan = self.ensure_default_floquet(plan)
         commands = plan.get("commands")
@@ -961,7 +987,8 @@ class CSTVibeGUI:
         ]
         if not any(isinstance(item, dict) and item.get("op") == "rebuild" for item in filtered):
             filtered.append({"op": "rebuild"})
-        filtered.append({"op": "solver_start", "solver": "frequency"})
+        solver_kind = self.solver_kind_from_plan(plan)
+        filtered.append({"op": "solver_start", "solver": solver_kind})
         if export_path is not None:
             filtered.append({"op": "export_touchstone", "path": str(export_path), "impedance": 50})
         plan["commands"] = filtered
@@ -969,6 +996,16 @@ class CSTVibeGUI:
         if isinstance(project, dict):
             project["save_as"] = str(export_path.parents[1] / "cst_project.cst") if export_path is not None else project.get("save_as")
         return plan
+
+    def solver_kind_from_plan(self, plan: dict) -> str:
+        commands = plan.get("commands", [])
+        if isinstance(commands, list):
+            for item in commands:
+                if isinstance(item, dict) and item.get("op") == "solver_type":
+                    solver_type = str(item.get("type", "")).lower()
+                    if "time" in solver_type:
+                        return "time"
+        return "frequency"
 
     def sync_wizard_parameters_if_needed(self) -> bool:
         if self.plan_source.get() != "wizard":
@@ -1033,6 +1070,23 @@ class CSTVibeGUI:
         ops = [item.get("op") for item in commands if isinstance(item, dict)]
         if "discrete_port" in ops:
             messages.append("[warn] discrete_port가 있습니다. 포트 위치를 CST에서 확인하세요.")
+        if "background" in ops:
+            messages.append("[ok] Background 설정이 있습니다. 기본은 Normal, epsilon=1, mue=1입니다.")
+        else:
+            messages.append("[warn] Background 설정이 없습니다. 실행 시 기본 Normal 배경을 자동 추가합니다.")
+        if "boundary" in ops:
+            messages.append("[ok] Boundary 설정이 있습니다. 기본은 x/y unit cell, z open입니다.")
+        else:
+            messages.append("[warn] Boundary 설정이 없습니다. 실행 시 기본 unit cell/open 경계를 자동 추가합니다.")
+        if "solver_type" in ops:
+            solver_types = [
+                str(item.get("type", ""))
+                for item in commands
+                if isinstance(item, dict) and item.get("op") == "solver_type"
+            ]
+            messages.append(f"[ok] Solver type: {solver_types[-1] if solver_types else '설정됨'}")
+        else:
+            messages.append("[warn] Solver type이 없습니다. 실행 시 HF Time Domain을 자동 추가합니다.")
         if "floquet_port" in ops:
             messages.append("[ok] Floquet port 설정이 있습니다. 기본 mode number는 2입니다.")
         elif "discrete_port" not in ops:
@@ -1157,11 +1211,14 @@ class CSTVibeGUI:
         threading.Thread(target=worker, daemon=True).start()
 
     def apply_llm_plan(self, plan: dict) -> None:
+        plan = self.ensure_default_solver_type(plan)
+        plan = self.ensure_default_background(plan)
         plan = self.ensure_default_boundary(plan)
+        plan = self.ensure_default_floquet(plan)
         self.sync_wizard_from_plan(plan)
         self.set_plan(plan, source="llm")
-        self.append_output("[llm] JSON 변환 완료. 실행 전 확인을 먼저 누르세요.\n")
-        self.append_output("[flow] LLM 결과의 기본 파라미터를 왼쪽 유닛셀 값에도 반영했습니다.\n")
+        self.append_output("[llm] JSON 변환 완료. 누락된 Background/Boundary/Solver/Floquet 기본값도 자동 보정했습니다.\n")
+        self.append_output("[flow] 실행 전 확인에서 CST에 들어갈 전체 설정을 검토할 수 있습니다.\n")
         self.status.set("LLM JSON 변환 완료")
         self.notebook.select(self.json_tab)
 
@@ -1182,7 +1239,7 @@ class CSTVibeGUI:
 
         self.pending_result_dir = run_dir
         self.after_run_action = "collect_results"
-        self.append_output("[flow] CST에서 형상 + Floquet modes=2를 만들고 Frequency Solver Start를 실행합니다.\n")
+        self.append_output("[flow] CST에서 Background/Boundary/Floquet을 설정하고 Solver Start를 실행합니다.\n")
         self.append_output(f"[flow] 해석 후 S-parameter export: {export_path}\n\n")
         self.run_plan(
             False,
@@ -1200,9 +1257,29 @@ class CSTVibeGUI:
                 "project": {"mode": "active"},
                 "parameters": {},
                 "commands": [
-                    {"op": "solver_type", "type": "HF Frequency Domain"},
+                    {"op": "solver_type", "type": self.solver_type.get().strip() or "HF Time Domain"},
+                    {"op": "background", "type": "Normal", "epsilon": "1", "mue": "1"},
+                    {
+                        "op": "boundary",
+                        "xmin": "unit cell",
+                        "xmax": "unit cell",
+                        "ymin": "unit cell",
+                        "ymax": "unit cell",
+                        "zmin": "open",
+                        "zmax": "open",
+                    },
+                    {
+                        "op": "floquet_port",
+                        "modes": self.floquet_modes.get().strip() or "2",
+                        "ports": ["Zmin", "Zmax"],
+                        "theta": "0",
+                        "phi": "0",
+                    },
                     {"op": "rebuild"},
-                    {"op": "solver_start", "solver": "frequency"},
+                    {
+                        "op": "solver_start",
+                        "solver": "time" if "time" in self.solver_type.get().lower() else "frequency",
+                    },
                     {"op": "export_touchstone", "path": str(export_path), "impedance": 50},
                 ],
             }

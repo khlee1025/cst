@@ -44,11 +44,13 @@ End With
 Solver.Start
 ```
 
-현재 기본 해석 버튼은 형상 생성, Floquet port 설정, rebuild 이후 `Solver.Start`까지 실행합니다.
+현재 기본 해석 버튼은 형상 생성, background, boundary, Floquet port 설정, rebuild 이후 `Solver.Start`까지 실행합니다.
 
 기본 단일 해석에서는 `StoreParameter`를 쓰지 않습니다. Python이 `length-width` 같은 식을 먼저 숫자로 계산해서 CST에 넘겨야 `New Parameter` 입력창이 뜨지 않습니다.
 
-새 프로젝트에서는 solver start 전에 `ChangeSolverType "HF Frequency Domain"`을 넣습니다. CST에서 사용자가 `Setup Solver`를 열고 주파수 영역 해석을 고른 뒤 `Start`를 누르는 동작을 자동화하기 위한 기본값입니다.
+새 프로젝트에서는 solver start 전에 기본으로 `ChangeSolverType "HF Time Domain"`을 넣습니다. GUI의 숫자 입력 창에서 `HF Frequency Domain`으로 바꿀 수 있습니다.
+
+기본 배경/경계조건은 `Background Normal, epsilon=1, mue=1`, x/y `unit cell`, z `open`입니다. LLM이 이 항목을 빼먹어도 GUI가 실행 전에 자동으로 보정합니다.
 
 러너에서는 `solver_start`를 일반 형상 명령처럼 `AddToHistory`에만 넣지 않고, CST 자료의 `solver = invoke(mws, 'Solver')`, `invoke(solver, 'Start')` 패턴처럼 solver 객체를 먼저 얻고 `Start()`를 직접 호출합니다. 실패할 때만 `AddToHistory` 매크로 방식으로 fallback합니다.
 

@@ -12,10 +12,12 @@ Output rules:
 Beginner safety rules:
 - Default geometry is a mesh/screen unit cell shaped like a square frame (`ㅁ`).
 - For the mesh/screen unit cell, use Floquet ports by default with `modes`: `"2"` on `Zmin` and `Zmax`.
+- Use `{"op":"solver_type","type":"HF Time Domain"}` by default unless the user explicitly asks for frequency domain.
+- Use `{"op":"background","type":"Normal","epsilon":"1","mue":"1"}` by default.
 - Do not add `solver_start` unless the user explicitly asks to run the solver. The GUI can add it automatically.
 - Do not add `export_touchstone` unless the user explicitly asks to export results. The GUI can add it automatically.
 - Do not add complex boundary conditions unless the user explicitly asks for them.
-- For first-pass unit-cell generation, create units, frequency range, boundary, Floquet port, and brick solids.
+- For first-pass unit-cell generation, create units, solver type, background, frequency range, boundary, Floquet port, and brick solids.
 - Use boundary conditions by default: x/y `unit cell`, z `open`.
 - Prefer simple `brick` geometry before using `cylinder`, `boolean`, or `vba_history`.
 
@@ -44,7 +46,7 @@ Default mesh unit cell rules:
 
 Supported operations:
 - `units`: `geometry`, `frequency`, `time`
-- `solver_type`: optional, use `{"op":"solver_type","type":"HF Frequency Domain"}` for the default mesh unit-cell simulation
+- `solver_type`: optional, use `{"op":"solver_type","type":"HF Time Domain"}` for the default mesh unit-cell simulation
 - `frequency_range`: `fmin`, `fmax`
 - `boundary`: `xmin`, `xmax`, `ymin`, `ymax`, `zmin`, `zmax`
 - `floquet_port`: `modes`, `ports`, optional `theta`, `phi`
@@ -89,7 +91,13 @@ Example JSON:
     },
     {
       "op": "solver_type",
-      "type": "HF Frequency Domain"
+      "type": "HF Time Domain"
+    },
+    {
+      "op": "background",
+      "type": "Normal",
+      "epsilon": "1",
+      "mue": "1"
     },
     {
       "op": "frequency_range",

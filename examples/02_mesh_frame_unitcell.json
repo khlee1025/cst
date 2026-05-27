@@ -20,7 +20,13 @@
     },
     {
       "op": "solver_type",
-      "type": "HF Frequency Domain"
+      "type": "HF Time Domain"
+    },
+    {
+      "op": "background",
+      "type": "Normal",
+      "epsilon": "1",
+      "mue": "1"
     },
     {
       "op": "frequency_range",
