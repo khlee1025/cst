@@ -54,6 +54,8 @@ Solver.Start
 
 러너에서는 `solver_start`를 일반 형상 명령처럼 `AddToHistory`에만 넣지 않고, CST 자료의 `solver = invoke(mws, 'Solver')`, `invoke(solver, 'Start')` 패턴처럼 solver 객체를 먼저 얻고 `Start()`를 직접 호출합니다. 실패할 때만 `AddToHistory` 매크로 방식으로 fallback합니다.
 
+`rebuild`도 CST 2025 COM 바인딩 차이를 피하기 위해 `mws.Rebuild()`, raw COM `Rebuild`, `AddToHistory("rebuild model", "Rebuild")` 순서로 fallback합니다.
+
 ## Parameter Sweep
 
 Python이 각 케이스마다 새 CST 프로젝트를 여는 방식은 기본 흐름이 아닙니다.

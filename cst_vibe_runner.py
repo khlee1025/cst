@@ -458,7 +458,32 @@ class CSTSession:
             print("[dry-run] Rebuild")
             return
         self._require_mws()
-        self.mws.Rebuild()
+        errors: list[str] = []
+        try:
+            self.mws.Rebuild()
+            print("[cst] Rebuild completed")
+            return
+        except Exception as exc:
+            errors.append(f"mws.Rebuild() failed: {exc}")
+        try:
+            import pythoncom  # type: ignore
+
+            self.mws._oleobj_.Invoke(
+                self.mws._oleobj_.GetIDsOfNames("Rebuild"),
+                0,
+                pythoncom.DISPATCH_METHOD,
+                False,
+            )
+            print("[cst] Rebuild completed by raw COM")
+            return
+        except Exception as exc:
+            errors.append(f"raw COM Rebuild failed: {exc}")
+        try:
+            self.add_history("rebuild model", "Rebuild")
+            return
+        except Exception as exc:
+            errors.append(f"AddToHistory Rebuild fallback failed: {exc}")
+        raise PlanError("CST Rebuild failed.\n" + "\n".join(errors))
 
     def start_solver(self, solver: str | None = None) -> None:
         order = ["Solver", "FDSolver"]
