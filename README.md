@@ -74,7 +74,8 @@ dir
 2. 왼쪽에 하고 싶은 작업 입력
 3. 1. 대사 적용
 4. 2. 실행 전 확인
-5. 3. CST 해석 + 결과 보기
+5. 3. 시뮬레이션 시작
+6. CST 해석이 끝난 뒤 결과 불러오기
 ```
 
 보조로 `숫자 직접 입력`, `스윕 설정`, `결과 불러오기`만 화면에 남겨두었습니다.
@@ -97,11 +98,11 @@ length=100, width=10, thickness=2, fmin=1, fmax=18
 
 CST를 열지 않고 JSON, 치수, 주파수 범위, CST에 보낼 매크로를 확인합니다.
 
-### 3. 시뮬레이션 시작 + S11/S21
+### 3. 시뮬레이션 시작
 
-기본 메인 실행 버튼입니다. CST를 열고 형상, `Background Normal`, x/y `unit cell`, z `open add space`, Floquet port를 만든 뒤 기본 `HF Time Domain` solver type으로 CST의 `Setup Solver -> Start`에 해당하는 Solver Start를 실행합니다. 해석이 끝나면 Touchstone `.s2p`를 export합니다.
+기본 메인 실행 버튼입니다. CST를 열고 형상, `Background Normal`, x/y `unit cell`, z `open add space`, Floquet port를 만든 뒤 기본 `HF Time Domain` solver type으로 CST의 `Setup Solver -> Start`에 해당하는 Solver Start를 실행합니다.
 
-해석이 끝나면 오른쪽 `S11/S21 결과` 탭에 요약이 바로 표시됩니다.
+이 버튼은 Touchstone export를 자동으로 하지 않습니다. CST solver가 실제로 도는 것이 먼저라서, 해석 완료 뒤 CST에서 `.s2p`를 export하거나 생성된 결과 폴더를 `결과 불러오기`로 읽습니다.
 
 Floquet mode number 기본값은 `2`이고, `Zmin`/`Zmax`에 적용합니다.
 
@@ -109,18 +110,19 @@ Floquet mode number 기본값은 `2`이고, `Zmin`/`Zmax`에 적용합니다.
 runs/
   날짜_시간_mesh_frame_unitcell/
     cst_project.cst
-    exports/sparameters.s2p
-    s11_s21_summary.csv
+    cst_project.cst
+    input_plan.json
+    summary.json
 ```
 
-### 현재 CST만 Start
+### 현재 CST 시뮬레이션
 
 이미 CST 창에 형상이 만들어져 있는데 solver만 안 돈 것 같으면 이 버튼을 누릅니다.
 
 - 새 형상을 다시 만들지 않고 현재 열려 있는 CST 3D 프로젝트에 붙습니다.
 - `Background Normal`, x/y `unit cell`, z `open add space`, Floquet mode `2`를 다시 적용합니다.
 - 선택된 solver type을 한 번 더 지정합니다. 기본값은 `HF Time Domain`입니다.
-- `Rebuild -> Solver Start -> Touchstone export`만 실행합니다.
+- `Rebuild -> Solver Start`만 실행합니다.
 
 즉, “도형은 보이는데 해석이 안 돈다”를 확인할 때 쓰는 버튼입니다.
 

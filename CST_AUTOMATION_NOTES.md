@@ -46,6 +46,8 @@ Solver.Start
 
 현재 기본 해석 버튼은 형상 생성, background, boundary, Floquet port 설정, rebuild 이후 `Solver.Start`까지 실행합니다.
 
+기본 단일 해석 버튼에서는 `Touchstone export`를 바로 실행하지 않습니다. 일부 CST 버전에서는 `Solver.Start` 호출이 해석 완료까지 block하지 않기 때문에, 바로 export를 붙이면 solver가 돌기 전에 Touchstone 에러가 먼저 날 수 있습니다. S11/S21 정리는 해석 완료 후 사용자가 export한 결과 폴더를 읽는 흐름으로 분리합니다.
+
 기본 단일 해석에서는 `StoreParameter`를 쓰지 않습니다. Python이 `length-width` 같은 식을 먼저 숫자로 계산해서 CST에 넘겨야 `New Parameter` 입력창이 뜨지 않습니다.
 
 새 프로젝트에서는 solver start 전에 기본으로 `ChangeSolverType "HF Time Domain"`을 넣습니다. GUI의 숫자 입력 창에서 `HF Frequency Domain`으로 바꿀 수 있습니다.

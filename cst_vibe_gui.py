@@ -206,7 +206,7 @@ class CSTVibeGUI:
         buttons = [
             ("1. 대사 적용", self.apply_request_to_wizard, "Accent.TButton"),
             ("2. 실행 전 확인", self.preflight_check, "TButton"),
-            ("3. 시뮬레이션 시작 + S11/S21", self.run_solve_and_collect, "Accent.TButton"),
+            ("3. 시뮬레이션 시작", self.run_simulation, "Accent.TButton"),
         ]
         for row, (label, command, style) in enumerate(buttons):
             ttk.Button(actions, text=label, command=command, style=style).grid(
@@ -218,7 +218,7 @@ class CSTVibeGUI:
         for i in range(3):
             utility.columnconfigure(i, weight=1)
         ttk.Button(utility, text="숫자 직접 입력", command=self.open_wizard).grid(row=0, column=0, sticky="ew", padx=(0, 4))
-        ttk.Button(utility, text="현재 CST만 Start", command=self.run_active_solver_and_collect).grid(row=0, column=1, sticky="ew", padx=4)
+        ttk.Button(utility, text="현재 CST 시뮬레이션", command=self.run_active_simulation).grid(row=0, column=1, sticky="ew", padx=4)
         ttk.Button(utility, text="결과 불러오기", command=self.collect_sparams_dialog).grid(row=0, column=2, sticky="ew", padx=(4, 0))
 
     def build_result_panel(self, parent: ttk.Frame) -> None:
@@ -240,10 +240,10 @@ class CSTVibeGUI:
         self.result_tab = result_tab
         self.sweep_tab = sweep_tab
         self.json_tab = json_tab
-        self.notebook.add(output_tab, text="실행 출력")
-        self.notebook.add(result_tab, text="S11/S21 결과")
+        self.notebook.add(output_tab, text="시뮬레이션 로그")
+        self.notebook.add(result_tab, text="해석 후 S11/S21")
         self.notebook.add(sweep_tab, text="스윕 설정")
-        self.notebook.add(json_tab, text="JSON 명령서")
+        self.notebook.add(json_tab, text="설정/JSON")
 
         self.output_text = ScrolledText(
             output_tab,
@@ -272,7 +272,7 @@ class CSTVibeGUI:
             relief="flat",
         )
         self.result_text.pack(fill=BOTH, expand=True)
-        self.result_text.insert("1.0", "해석이 끝나면 S11/S21 요약이 여기에 표시됩니다.\n")
+        self.result_text.insert("1.0", "CST 해석이 끝난 뒤 결과 불러오기를 누르면 S11/S21 요약이 표시됩니다.\n")
 
         self.plan_text = ScrolledText(
             json_tab,
@@ -468,7 +468,7 @@ class CSTVibeGUI:
             self.notebook.select(0)
             changed = ", ".join(f"{key}={value}" for key, value in found.items()) or "기본값 유지"
             self.append_output(f"[flow] 대사를 기본 유닛셀 값에 반영했습니다: {changed}\n")
-            self.append_output("[flow] 다음은 '2. 실행 전 확인' 또는 바로 '3. CST 해석 + 결과 보기'를 누르면 됩니다.\n\n")
+            self.append_output("[flow] 다음은 '2. 실행 전 확인' 또는 바로 '3. 시뮬레이션 시작'을 누르면 됩니다.\n\n")
             self.status.set("대사 적용 완료")
 
     def extract_request_values(self, text: str) -> dict[str, str]:
@@ -883,6 +883,7 @@ class CSTVibeGUI:
         if not isinstance(commands, list):
             return plan
         if any(isinstance(item, dict) and item.get("op") == "boundary" for item in commands):
+            self.normalize_boundary_defaults(commands)
             return plan
         boundary = {
             "op": "boundary",
@@ -899,6 +900,17 @@ class CSTVibeGUI:
                 insert_at = index + 1
         commands.insert(insert_at, boundary)
         return plan
+
+    def normalize_boundary_defaults(self, commands: list) -> None:
+        for item in commands:
+            if not (isinstance(item, dict) and item.get("op") == "boundary"):
+                continue
+            for key in ("xmin", "xmax", "ymin", "ymax"):
+                item.setdefault(key, "unit cell")
+            for key in ("zmin", "zmax"):
+                value = str(item.get(key, "")).strip().lower()
+                if value in {"", "open", "open add", "open add space", "open (add space)", "expanded open"}:
+                    item[key] = "expanded open"
 
     def ensure_default_floquet(self, plan: dict) -> dict:
         commands = plan.get("commands")
@@ -971,12 +983,9 @@ class CSTVibeGUI:
         timestamp = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
         return APP_DIR / "runs" / f"{timestamp}_{self.safe_slug(prefix)}"
 
-    def prepare_solver_plan(self, base_plan: dict, export_path: Path | None) -> dict:
+    def prepare_solver_plan(self, base_plan: dict, export_path: Path | None, include_solver: bool = True) -> dict:
         plan = copy.deepcopy(base_plan)
-        plan = self.ensure_default_solver_type(plan)
-        plan = self.ensure_default_background(plan)
-        plan = self.ensure_default_boundary(plan)
-        plan = self.ensure_default_floquet(plan)
+        plan = self.normalize_simulation_setup(plan)
         commands = plan.get("commands")
         if not isinstance(commands, list):
             raise ValueError("commands는 list여야 합니다.")
@@ -987,14 +996,23 @@ class CSTVibeGUI:
         ]
         if not any(isinstance(item, dict) and item.get("op") == "rebuild" for item in filtered):
             filtered.append({"op": "rebuild"})
-        solver_kind = self.solver_kind_from_plan(plan)
-        filtered.append({"op": "solver_start", "solver": solver_kind})
+        if include_solver:
+            solver_kind = self.solver_kind_from_plan(plan)
+            filtered.append({"op": "solver_start", "solver": solver_kind})
         if export_path is not None:
             filtered.append({"op": "export_touchstone", "path": str(export_path), "impedance": 50})
         plan["commands"] = filtered
         project = plan.setdefault("project", {"mode": "new"})
         if isinstance(project, dict):
             project["save_as"] = str(export_path.parents[1] / "cst_project.cst") if export_path is not None else project.get("save_as")
+        return plan
+
+    def normalize_simulation_setup(self, base_plan: dict) -> dict:
+        plan = copy.deepcopy(base_plan)
+        plan = self.ensure_default_solver_type(plan)
+        plan = self.ensure_default_background(plan)
+        plan = self.ensure_default_boundary(plan)
+        plan = self.ensure_default_floquet(plan)
         return plan
 
     def solver_kind_from_plan(self, plan: dict) -> str:
@@ -1026,8 +1044,18 @@ class CSTVibeGUI:
     def preflight_check(self) -> None:
         if not self.sync_wizard_parameters_if_needed():
             return
+        try:
+            plan = self.prepare_solver_plan(self.current_plan(), None, include_solver=True)
+            self.set_plan(plan, source=self.plan_source.get())
+        except Exception as exc:
+            messagebox.showerror("실행 전 확인 실패", str(exc))
+            return
         self.rf_check(show_only=False)
-        self.run_plan(dry_run=True, mode_label="실행 전 확인")
+        self.run_plan(
+            dry_run=True,
+            plan_text=json.dumps(plan, ensure_ascii=False, indent=2) + "\n",
+            mode_label="실행 전 확인",
+        )
 
     def rf_check(self, show_only: bool = True) -> bool:
         try:
@@ -1222,36 +1250,38 @@ class CSTVibeGUI:
         self.status.set("LLM JSON 변환 완료")
         self.notebook.select(self.json_tab)
 
-    def run_solve_and_collect(self) -> None:
+    def run_simulation(self) -> None:
         if not self.sync_wizard_parameters_if_needed():
-            return
-        if not self.rf_check(show_only=False):
-            self.append_output("[stop] RF Check에 error가 있어 실행하지 않았습니다.\n")
             return
         try:
             base_plan = self.current_plan()
             run_dir = self.make_run_dir(str(base_plan.get("design_id") or "mesh_frame_unitcell"))
-            export_path = run_dir / "exports" / "sparameters.s2p"
-            plan = self.prepare_solver_plan(base_plan, export_path)
+            plan = self.prepare_solver_plan(base_plan, None, include_solver=True)
+            project = plan.setdefault("project", {"mode": "new"})
+            if isinstance(project, dict):
+                project["save_as"] = str(run_dir / "cst_project.cst")
         except Exception as exc:
             messagebox.showerror("실행 준비 실패", str(exc))
             return
 
-        self.pending_result_dir = run_dir
-        self.after_run_action = "collect_results"
+        self.set_plan(plan, source=self.plan_source.get())
+        if not self.rf_check(show_only=False):
+            self.append_output("[stop] RF Check에 error가 있어 실행하지 않았습니다.\n")
+            return
+        self.pending_result_dir = None
+        self.after_run_action = None
         self.append_output("[flow] CST에서 Background/Boundary/Floquet을 설정하고 Solver Start를 실행합니다.\n")
-        self.append_output(f"[flow] 해석 후 S-parameter export: {export_path}\n\n")
+        self.append_output("[flow] Touchstone export는 자동으로 붙이지 않습니다. CST 해석 완료 후 결과 불러오기를 사용하세요.\n\n")
         self.run_plan(
             False,
             plan_text=json.dumps(plan, ensure_ascii=False, indent=2) + "\n",
-            mode_label="CST 해석 + 결과 보기",
+            mode_label="CST 시뮬레이션 시작",
             extra_args=["--run-dir", str(run_dir)],
         )
 
-    def run_active_solver_and_collect(self) -> None:
+    def run_active_simulation(self) -> None:
         try:
             run_dir = self.make_run_dir("active_cst_solver")
-            export_path = run_dir / "exports" / "sparameters.s2p"
             plan = {
                 "design_id": "active_cst_solver",
                 "project": {"mode": "active"},
@@ -1280,21 +1310,20 @@ class CSTVibeGUI:
                         "op": "solver_start",
                         "solver": "time" if "time" in self.solver_type.get().lower() else "frequency",
                     },
-                    {"op": "export_touchstone", "path": str(export_path), "impedance": 50},
                 ],
             }
         except Exception as exc:
             messagebox.showerror("시뮬레이션 준비 실패", str(exc))
             return
 
-        self.pending_result_dir = run_dir
-        self.after_run_action = "collect_results"
+        self.pending_result_dir = None
+        self.after_run_action = None
         self.append_output("[flow] 현재 열려 있는 CST 프로젝트에 붙어서 Solver Start를 실행합니다.\n")
-        self.append_output(f"[flow] 해석 후 S-parameter export: {export_path}\n\n")
+        self.append_output("[flow] Touchstone export는 자동으로 붙이지 않습니다. CST 해석 완료 후 결과 불러오기를 사용하세요.\n\n")
         self.run_plan(
             False,
             plan_text=json.dumps(plan, ensure_ascii=False, indent=2) + "\n",
-            mode_label="현재 CST Solver Start",
+            mode_label="현재 CST 시뮬레이션",
             extra_args=["--run-dir", str(run_dir), "--visible"],
         )
 
