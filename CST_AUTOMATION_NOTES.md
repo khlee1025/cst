@@ -56,6 +56,8 @@ Solver.Start
 
 `rebuild`도 CST 2025 COM 바인딩 차이를 피하기 위해 `mws.Rebuild()`, raw COM `Rebuild`, `AddToHistory("rebuild model", "Rebuild")` 순서로 fallback합니다.
 
+`project.mode = "active"`는 이미 실행 중인 CST에 붙어야 하므로 `GetActiveObject`를 먼저 사용합니다. `Active3D()`가 `False` 같은 bool을 반환하면 프로젝트 객체가 아니므로 폐기하고 다른 후보를 시도합니다.
+
 ## Parameter Sweep
 
 Python이 각 케이스마다 새 CST 프로젝트를 여는 방식은 기본 흐름이 아닙니다.

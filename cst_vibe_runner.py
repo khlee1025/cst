@@ -315,7 +315,7 @@ class CSTSession:
                 "python -m pip install pywin32"
             ) from exc
 
-        self.cst = self.dispatch_cst(win32com)
+        self.cst = self.dispatch_cst(win32com, prefer_running=(mode == "active"))
         if self.visible:
             try:
                 self.cst.Visible = True
@@ -335,21 +335,62 @@ class CSTSession:
 
     def active_3d_project(self) -> Any:
         errors: list[str] = []
-        for method_name in ("Active3D", "ActiveMWS"):
+        for method_name in ("Active3D", "ActiveMWS", "ActiveProject"):
             try:
-                project = getattr(self.cst, method_name)()
-                if project is not None:
-                    print(f"[cst] Attached to current CST project via {method_name}")
-                    return project
+                attr = getattr(self.cst, method_name)
             except Exception as exc:
-                errors.append(f"{method_name} failed: {exc}")
+                errors.append(f"{method_name} lookup failed: {exc}")
+                continue
+            for call_style, project in self.active_project_candidates(method_name, attr, errors):
+                if self.is_cst_project_object(project):
+                    print(f"[cst] Attached to current CST project via {method_name} {call_style}")
+                    return project
+                errors.append(f"{method_name} {call_style} returned {type(project).__name__}: {project!r}")
+            try:
+                import pythoncom  # type: ignore
+
+                dispid = self.cst._oleobj_.GetIDsOfNames(method_name)
+                for dispatch_type, label in (
+                    (pythoncom.DISPATCH_PROPERTYGET, "raw property"),
+                    (pythoncom.DISPATCH_METHOD, "raw method"),
+                ):
+                    try:
+                        project = self.cst._oleobj_.Invoke(dispid, 0, dispatch_type, False)
+                    except Exception as exc:
+                        errors.append(f"{method_name} {label} failed: {exc}")
+                        continue
+                    if self.is_cst_project_object(project):
+                        print(f"[cst] Attached to current CST project via {method_name} {label}")
+                        return project
+                    errors.append(f"{method_name} {label} returned {type(project).__name__}: {project!r}")
+            except Exception as exc:
+                errors.append(f"{method_name} raw COM lookup failed: {exc}")
         raise PlanError(
             "Could not attach to the currently open CST project. "
-            "Open or create a Microwave Studio project first.\n"
+            "CST returned no usable project object. Open a Microwave Studio 3D project, "
+            "or use the main simulation button to create a new project.\n"
             + "\n".join(errors)
         )
 
-    def dispatch_cst(self, win32com: Any) -> Any:
+    def active_project_candidates(self, method_name: str, attr: Any, errors: list[str]) -> list[tuple[str, Any]]:
+        candidates: list[tuple[str, Any]] = []
+        if callable(attr):
+            try:
+                candidates.append(("call", attr()))
+            except Exception as exc:
+                errors.append(f"{method_name} call failed: {exc}")
+        else:
+            candidates.append(("property", attr))
+        return candidates
+
+    def is_cst_project_object(self, value: Any) -> bool:
+        if value is None or isinstance(value, bool):
+            return False
+        if hasattr(value, "_oleobj_"):
+            return True
+        return any(hasattr(value, name) for name in ("AddToHistory", "Rebuild", "SaveAs", "Save"))
+
+    def dispatch_cst(self, win32com: Any, prefer_running: bool = False) -> Any:
         candidates = [self.prog_id]
         for prog_id in (
             "CSTStudio.Application.2025",
@@ -362,6 +403,14 @@ class CSTSession:
 
         errors = []
         for prog_id in candidates:
+            if prefer_running:
+                try:
+                    cst = win32com.client.GetActiveObject(prog_id)
+                    self.prog_id = prog_id
+                    print(f"[cst] Connected running ProgID: {prog_id}")
+                    return cst
+                except Exception as exc:
+                    errors.append(f"{prog_id} GetActiveObject: {exc}")
             try:
                 cst = win32com.client.Dispatch(prog_id)
             except Exception as exc:
