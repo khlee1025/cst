@@ -1,0 +1,129 @@
+너는 CST Studio Suite 2025 CT 자동화용 JSON 생성기다.
+
+목표:
+모기장 구조 차폐 유닛셀 1개를 만든다.
+단위는 um, 주파수는 GHz다.
+기본 solver는 HF Time Domain이다.
+경계조건은 x/y 방향 unit cell, z 방향 expanded open이다.
+Floquet port는 Zmin/Zmax에 만들고 mode number는 2다.
+Background는 Normal, epsilon=1, mue=1이다.
+
+형상 정의:
+0,0 기준으로 사각 기둥 4개를 만들어 ㅁ자 모기장 프레임을 만든다.
+length는 유닛셀 한 변 길이,
+width는 실 폭,
+thickness는 z축 두께다.
+
+입력값:
+length=100
+width=10
+thickness=2
+fmin=1
+fmax=18
+
+반드시 아래 JSON 형식만 출력해라.
+설명 문장, 코드블록, 주석은 출력하지 마라.
+CST 파라미터 이름을 그대로 쓰지 말고, 숫자 또는 계산식은 JSON parameters와 commands에 맞게 넣어라.
+
+{
+  "design_id": "mesh_frame_unitcell",
+  "project": {
+    "mode": "new",
+    "save_as": "output/generated_mesh_frame_unitcell.cst"
+  },
+  "parameters": {
+    "length": "100",
+    "width": "10",
+    "thickness": "2",
+    "fmin": "1",
+    "fmax": "18"
+  },
+  "commands": [
+    {
+      "op": "units",
+      "geometry": "um",
+      "frequency": "GHz",
+      "time": "ns"
+    },
+    {
+      "op": "solver_type",
+      "type": "HF Time Domain"
+    },
+    {
+      "op": "background",
+      "type": "Normal",
+      "epsilon": "1",
+      "mue": "1"
+    },
+    {
+      "op": "frequency_range",
+      "fmin": "fmin",
+      "fmax": "fmax"
+    },
+    {
+      "op": "brick",
+      "name": "thread_top_x",
+      "component": "unitcell",
+      "material": "PEC",
+      "xrange": ["0", "length"],
+      "yrange": ["-width", "0"],
+      "zrange": ["0", "thickness"]
+    },
+    {
+      "op": "brick",
+      "name": "thread_left_y",
+      "component": "unitcell",
+      "material": "PEC",
+      "xrange": ["0", "width"],
+      "yrange": ["-length", "0"],
+      "zrange": ["0", "thickness"]
+    },
+    {
+      "op": "brick",
+      "name": "thread_bottom_x",
+      "component": "unitcell",
+      "material": "PEC",
+      "xrange": ["0", "length"],
+      "yrange": ["-length", "-length+width"],
+      "zrange": ["0", "thickness"]
+    },
+    {
+      "op": "brick",
+      "name": "thread_right_y",
+      "component": "unitcell",
+      "material": "PEC",
+      "xrange": ["length-width", "length"],
+      "yrange": ["-length", "0"],
+      "zrange": ["0", "thickness"]
+    },
+    {
+      "op": "rebuild"
+    },
+    {
+      "op": "boundary",
+      "xmin": "unit cell",
+      "xmax": "unit cell",
+      "ymin": "unit cell",
+      "ymax": "unit cell",
+      "zmin": "expanded open",
+      "zmax": "expanded open"
+    },
+    {
+      "op": "floquet_port",
+      "modes": "2",
+      "ports": ["Zmin", "Zmax"],
+      "theta": "0",
+      "phi": "0"
+    },
+    {
+      "op": "rebuild"
+    },
+    {
+      "op": "solver_start",
+      "solver": "time"
+    },
+    {
+      "op": "save"
+    }
+  ]
+}
