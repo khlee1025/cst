@@ -2,9 +2,11 @@
 """
 CST Vibe Runner
 
-Runs a small JSON/YAML command plan against CST Studio Suite through the
-Windows COM interface. The plan is intended to be produced by a local LLM or
-written by hand. Use --dry-run first to inspect the generated CST macros.
+Runs a small JSON/YAML command plan against CST Studio Suite.
+
+The runner prefers the official CST Python API when it is available, then falls
+back to the Windows COM interface. The plan is intended to be produced by a
+local LLM or written by hand. Use --dry-run first to inspect generated macros.
 """
 
 from __future__ import annotations

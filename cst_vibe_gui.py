@@ -244,7 +244,7 @@ class CSTVibeGUI:
         self.notebook.add(output_tab, text="시뮬레이션 로그")
         self.notebook.add(result_tab, text="해석 후 S11/S21")
         self.notebook.add(sweep_tab, text="스윕 설정")
-        self.notebook.add(json_tab, text="설정/JSON")
+        self.notebook.add(json_tab, text="CST 실행 JSON")
 
         self.output_text = ScrolledText(
             output_tab,
@@ -274,6 +274,20 @@ class CSTVibeGUI:
         )
         self.result_text.pack(fill=BOTH, expand=True)
         self.result_text.insert("1.0", "CST 해석이 끝난 뒤 결과 불러오기를 누르면 S11/S21 요약이 표시됩니다.\n")
+
+        json_header = ttk.Frame(json_tab, style="Panel.TFrame", padding=(12, 10))
+        json_header.pack(fill=X)
+        ttk.Label(
+            json_header,
+            text="CST 실행 명령서",
+            style="Panel.TLabel",
+            font=("Segoe UI Semibold", 11),
+        ).pack(side=LEFT)
+        ttk.Label(
+            json_header,
+            text="parameters는 입력값이고, commands의 op 순서대로 CST에 전달됩니다. solver_start가 있어야 해석 시작까지 갑니다.",
+            style="Muted.TLabel",
+        ).pack(side=LEFT, padx=(12, 0))
 
         self.plan_text = ScrolledText(
             json_tab,
