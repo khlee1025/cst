@@ -102,6 +102,15 @@ CST를 열지 않고 JSON, 치수, 주파수 범위, CST에 보낼 매크로를 
 
 기본 메인 실행 버튼입니다. CST를 열고 형상, `Background Normal`, x/y `unit cell`, z `open add space`, Floquet port를 만든 뒤 기본 `HF Time Domain` solver type으로 CST의 `Setup Solver -> Start`에 해당하는 Solver Start를 실행합니다.
 
+시작 버튼을 누르면 바로 CST를 실행하지 않고 먼저 시작 전 설정 디버그를 수행합니다.
+
+- 필수 명령: units, frequency range, background, boundary, Floquet, rebuild, solver start
+- 기본값 검사: Background Normal, x/y unit cell, z expanded open, Floquet mode 2
+- 치수 검사: length/width/thickness/fmin/fmax
+- 매크로 생성 검사: CST를 열기 전 `--dry-run`으로 VBA 블록 생성 확인
+
+이 단계에서 error가 나오면 CST를 시작하지 않습니다.
+
 이 버튼은 Touchstone export를 자동으로 하지 않습니다. CST solver가 실제로 도는 것이 먼저라서, 해석 완료 뒤 CST에서 `.s2p`를 export하거나 생성된 결과 폴더를 `결과 불러오기`로 읽습니다.
 
 Floquet mode number 기본값은 `2`이고, `Zmin`/`Zmax`에 적용합니다.
