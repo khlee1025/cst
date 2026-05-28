@@ -14,6 +14,7 @@ import ast
 import copy
 import datetime as dt
 import json
+import os
 import re
 import sys
 from pathlib import Path
@@ -24,6 +25,75 @@ from cst_plan_defaults import normalize_boundary_value
 
 class PlanError(Exception):
     """Raised when the command plan is invalid."""
+
+
+def cst_python_library_candidates() -> list[Path]:
+    candidates: list[Path] = []
+
+    for env_name in ("CST_PYTHON_LIB", "CST_PYTHON_LIBRARIES", "CST_STUDIO_PYTHON_LIB"):
+        raw = os.environ.get(env_name)
+        if raw:
+            candidates.append(Path(raw))
+
+    roots = [
+        os.environ.get("CST_STUDIO_ROOT"),
+        os.environ.get("CST_INSTALL_ROOT"),
+        os.environ.get("ProgramFiles"),
+        os.environ.get("ProgramW6432"),
+    ]
+    install_names = [
+        "CST Studio Suite 2025",
+        "SIMULIA CST Studio Suite 2025",
+        "Dassault Systemes/CST Studio Suite 2025",
+        "Dassault Systemes/SIMULIA CST Studio Suite 2025",
+        "CST Studio Suite 2024",
+        "SIMULIA CST Studio Suite 2024",
+    ]
+    subdirs = [
+        "AMD64/python_cst_libraries",
+        "python_cst_libraries",
+        "Library/python_cst_libraries",
+    ]
+    for root_text in roots:
+        if not root_text:
+            continue
+        root = Path(root_text)
+        for name in install_names:
+            install = root / name
+            for subdir in subdirs:
+                candidates.append(install / subdir)
+        for subdir in subdirs:
+            candidates.append(root / subdir)
+
+    seen: set[str] = set()
+    existing: list[Path] = []
+    for candidate in candidates:
+        resolved = candidate.expanduser()
+        key = str(resolved).lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        if resolved.exists():
+            existing.append(resolved)
+    return existing
+
+
+def import_cst_interface() -> Any:
+    for path in cst_python_library_candidates():
+        text = str(path)
+        if text not in sys.path:
+            sys.path.insert(0, text)
+    try:
+        import cst.interface  # type: ignore
+    except ImportError as exc:
+        searched = "\n- ".join(str(path) for path in cst_python_library_candidates()) or "(none found)"
+        raise PlanError(
+            "CST Python API could not be imported. Install paths were searched, "
+            "but the cst.interface package was not available.\n"
+            "Set CST_PYTHON_LIB to your CST python_cst_libraries folder if CST is installed elsewhere.\n"
+            f"Searched:\n- {searched}"
+        ) from exc
+    return cst.interface
 
 
 def load_plan(path: Path) -> dict[str, Any]:
@@ -285,22 +355,29 @@ class CSTSession:
         visible: bool,
         continue_on_error: bool = False,
         skip_saves: bool = False,
+        api: str = "auto",
     ) -> None:
         self.dry_run = dry_run
         self.prog_id = prog_id
         self.visible = visible
         self.continue_on_error = continue_on_error
         self.skip_saves = skip_saves
+        self.api = api
+        self.backend = "dry-run" if dry_run else "unconnected"
         self.errors: list[str] = []
+        self.de = None
         self.cst = None
         self.mws = None
+        self.modeler = None
+        self.schematic = None
 
     def connect_project(self, project: dict[str, Any]) -> None:
         mode = project.get("mode", "new")
         path = project.get("path")
 
         if self.dry_run:
-            print(f"[dry-run] COM Dispatch: {self.prog_id}")
+            print(f"[dry-run] CST API mode: {self.api}")
+            print(f"[dry-run] COM ProgID fallback: {self.prog_id}")
             if mode == "open":
                 print(f"[dry-run] Open CST project: {Path(path).resolve() if path else path}")
             elif mode == "active":
@@ -308,6 +385,17 @@ class CSTSession:
             else:
                 print("[dry-run] Create new CST Microwave Studio project")
             return
+
+        if self.api in {"auto", "cst-python"}:
+            try:
+                self.connect_project_cst_python(project)
+                return
+            except Exception as exc:
+                if self.api == "cst-python":
+                    if isinstance(exc, PlanError):
+                        raise
+                    raise PlanError(f"CST Python API connection failed: {exc}") from exc
+                print(f"[cst-python] unavailable, falling back to COM: {exc}")
 
         try:
             import win32com.client  # type: ignore
@@ -334,6 +422,59 @@ class CSTSession:
             self.mws = self.active_3d_project()
         else:
             raise PlanError("project.mode must be 'new', 'open', or 'active'.")
+        self.backend = "com"
+
+    def connect_project_cst_python(self, project: dict[str, Any]) -> None:
+        interface = import_cst_interface()
+        mode = project.get("mode", "new")
+        path = project.get("path")
+
+        self.de = interface.DesignEnvironment()
+        if mode == "new":
+            self.mws = self.call_first(self.de, ("new_mws", "NewMWS"))
+        elif mode == "open":
+            if not path:
+                raise PlanError("project.path is required when project.mode is 'open'.")
+            self.mws = self.call_first(
+                self.de,
+                ("open_project", "open_file", "OpenFile"),
+                str(Path(path).resolve()),
+            )
+        elif mode == "active":
+            self.mws = self.call_first(
+                self.de,
+                ("active_project", "get_active_project", "get_active_3d", "ActiveProject"),
+            )
+        else:
+            raise PlanError("project.mode must be 'new', 'open', or 'active'.")
+
+        if self.mws is None:
+            raise PlanError("CST Python API returned no project object.")
+        self.modeler = getattr(self.mws, "modeler", None)
+        self.schematic = getattr(self.mws, "schematic", None)
+        if self.modeler is None:
+            raise PlanError("CST Python API project has no modeler object.")
+        self.backend = "cst-python"
+        print("[cst-python] Connected through CST Python API")
+
+    def call_first(self, obj: Any, method_names: Iterable[str], *args: Any) -> Any:
+        errors: list[str] = []
+        for method_name in method_names:
+            try:
+                attr = getattr(obj, method_name)
+            except Exception as exc:
+                errors.append(f"{method_name} lookup failed: {exc}")
+                continue
+            if not callable(attr):
+                if args:
+                    errors.append(f"{method_name} is a property but arguments were supplied")
+                    continue
+                return attr
+            try:
+                return attr(*args)
+            except Exception as exc:
+                errors.append(f"{method_name} failed: {exc}")
+        raise PlanError("; ".join(errors))
 
     def active_3d_project(self) -> Any:
         errors: list[str] = []
@@ -442,6 +583,20 @@ class CSTSession:
             print(code_text)
             print("--- end ---")
             return
+        if self.backend == "cst-python":
+            if self.modeler is None:
+                raise PlanError("CST Python API modeler is not connected.")
+            print(f"[cst-python] add_to_history: {name_text}")
+            try:
+                self.modeler.add_to_history(name_text, code_text)
+                return
+            except Exception as exc:
+                raise PlanError(
+                    "CST Python API add_to_history failed. CST rejected this macro block.\n\n"
+                    f"History name:\n{name_text}\n\n"
+                    f"Macro code:\n{code_text}\n\n"
+                    f"Original error:\n{exc}"
+                ) from exc
         self._require_mws()
         print(f"[cst] AddToHistory: {name_text}")
         print(f"[cst] AddToHistory args: name_length={len(name_text)}, code_length={len(code_text)}")
@@ -494,6 +649,17 @@ class CSTSession:
         if self.dry_run:
             print(f"[dry-run] StoreParameter {name} = {value}")
             return
+        if self.backend == "cst-python":
+            code = f'StoreParameter({q(name)}, {q(value)})'
+            if self.schematic is not None and hasattr(self.schematic, "execute_vba_code"):
+                macro = "Sub Main\n" + code + "\nEnd Sub"
+                try:
+                    self.schematic.execute_vba_code(macro)
+                    return
+                except Exception as exc:
+                    print(f"[cst-python] schematic.execute_vba_code StoreParameter failed, using history: {exc}")
+            self.add_history(f"store parameter {name}", code)
+            return
         self._require_mws()
         try:
             self.mws.StoreParameter(str(name), str(value))
@@ -508,6 +674,24 @@ class CSTSession:
         if self.dry_run:
             print("[dry-run] Rebuild")
             return
+        if self.backend == "cst-python":
+            errors: list[str] = []
+            for target_name, target in (("modeler", self.modeler), ("project", self.mws)):
+                if target is None:
+                    continue
+                for method_name in ("rebuild", "Rebuild"):
+                    try:
+                        getattr(target, method_name)()
+                        print(f"[cst-python] {target_name}.{method_name} completed")
+                        return
+                    except Exception as exc:
+                        errors.append(f"{target_name}.{method_name} failed: {exc}")
+            try:
+                self.add_history("rebuild model", "Rebuild")
+                return
+            except Exception as exc:
+                errors.append(f"add_to_history Rebuild fallback failed: {exc}")
+            raise PlanError("CST Rebuild failed through CST Python API.\n" + "\n".join(errors))
         self._require_mws()
         errors: list[str] = []
         try:
@@ -545,6 +729,26 @@ class CSTSession:
         if self.dry_run:
             print(f"[dry-run] Start solver via {order[0]}.Start")
             return
+        if self.backend == "cst-python":
+            errors: list[str] = []
+            for target_name, target in (("modeler", self.modeler), ("project", self.mws)):
+                if target is None:
+                    continue
+                for method_name in ("run_solver", "start_solver", "RunSolver", "StartSolver"):
+                    try:
+                        getattr(target, method_name)()
+                        print(f"[cst-python] {target_name}.{method_name} completed")
+                        return
+                    except Exception as exc:
+                        errors.append(f"{target_name}.{method_name} failed: {exc}")
+            name, code = macro_solver_start({"solver": solver})
+            try:
+                self.add_history(name, code)
+                print("[cst-python] Solver.Start added through history fallback")
+                return
+            except Exception as exc:
+                errors.append(f"add_to_history Solver.Start fallback failed: {exc}")
+            raise PlanError("CST solver start failed through CST Python API.\n" + "\n".join(errors))
         self._require_mws()
         errors: list[str] = []
         for object_name in order:
@@ -621,6 +825,14 @@ class CSTSession:
         if self.dry_run:
             print("[dry-run] Save")
             return
+        if self.backend == "cst-python":
+            if self.mws is None:
+                raise PlanError("CST Python API project is not connected.")
+            try:
+                self.call_first(self.mws, ("save", "Save"))
+                return
+            except Exception as exc:
+                raise PlanError(f"CST Python API save failed: {exc}") from exc
         self._require_mws()
         self.mws.Save()
 
@@ -633,6 +845,14 @@ class CSTSession:
             print(f"[dry-run] SaveAs {resolved}")
             return
         resolved.parent.mkdir(parents=True, exist_ok=True)
+        if self.backend == "cst-python":
+            if self.mws is None:
+                raise PlanError("CST Python API project is not connected.")
+            try:
+                self.call_first(self.mws, ("save", "save_as", "SaveAs"), str(resolved))
+                return
+            except Exception as exc:
+                raise PlanError(f"CST Python API SaveAs failed: {exc}") from exc
         self._require_mws()
         self.mws.SaveAs(str(resolved), True)
 
@@ -1018,7 +1238,14 @@ def run_plan(plan: dict[str, Any], args: argparse.Namespace) -> None:
     if not isinstance(project, dict):
         raise PlanError("project must be an object.")
 
-    session = CSTSession(args.dry_run, args.prog_id, args.visible, args.continue_on_error, args.no_project_save)
+    session = CSTSession(
+        args.dry_run,
+        args.prog_id,
+        args.visible,
+        args.continue_on_error,
+        args.no_project_save,
+        args.api,
+    )
     session.connect_project(project)
 
     parameters = plan.get("parameters", {})
@@ -1118,6 +1345,12 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         "--prog-id",
         default="CSTStudio.Application.2025",
         help="CST COM ProgID. Default: CSTStudio.Application.2025",
+    )
+    parser.add_argument(
+        "--api",
+        choices=["auto", "cst-python", "com"],
+        default="auto",
+        help="CST automation backend. Default: auto uses CST Python API first, then COM.",
     )
     parser.add_argument(
         "--store-parameters",

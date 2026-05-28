@@ -92,6 +92,10 @@
       "op": "rebuild"
     },
     {
+      "op": "solver_start",
+      "solver": "time"
+    },
+    {
       "op": "save"
     }
   ]
