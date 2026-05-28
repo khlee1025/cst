@@ -226,6 +226,7 @@ CST 내부에도 파라미터를 남기고 싶은 고급 사용자는 `--store-p
 
 ```text
 cst_vibe_gui.py          초보자용 GUI
+cst_plan_defaults.py     RF 기본값, boundary 보정, 시작 전 검증 로직
 cst_vibe_runner.py       CST COM 실행 엔진
 CST_AUTOMATION_NOTES.md  CST/Floquet/solver 자동화 기준 메모
 prompt_for_local_llm.md  LLM에게 JSON 생성을 시킬 때 쓰는 프롬프트

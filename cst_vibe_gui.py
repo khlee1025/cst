@@ -28,6 +28,7 @@ from tkinter.scrolledtext import ScrolledText
 from tkinter import ttk
 
 import collect_sparams
+import cst_plan_defaults as plan_defaults
 
 
 APP_DIR = Path(__file__).resolve().parent
@@ -878,88 +879,6 @@ class CSTVibeGUI:
                     self.floquet_modes.set(str(item.get("modes", item.get("mode_count", "2"))))
         self.update_param_summary()
 
-    def ensure_default_boundary(self, plan: dict) -> dict:
-        commands = plan.get("commands")
-        if not isinstance(commands, list):
-            return plan
-        if any(isinstance(item, dict) and item.get("op") == "boundary" for item in commands):
-            self.normalize_boundary_defaults(commands)
-            return plan
-        boundary = {
-            "op": "boundary",
-            "xmin": "unit cell",
-            "xmax": "unit cell",
-            "ymin": "unit cell",
-            "ymax": "unit cell",
-            "zmin": "expanded open",
-            "zmax": "expanded open",
-        }
-        insert_at = 0
-        for index, item in enumerate(commands):
-            if isinstance(item, dict) and item.get("op") in {"units", "frequency_range"}:
-                insert_at = index + 1
-        commands.insert(insert_at, boundary)
-        return plan
-
-    def normalize_boundary_defaults(self, commands: list) -> None:
-        for item in commands:
-            if not (isinstance(item, dict) and item.get("op") == "boundary"):
-                continue
-            for key in ("xmin", "xmax", "ymin", "ymax"):
-                item.setdefault(key, "unit cell")
-            for key in ("zmin", "zmax"):
-                value = str(item.get(key, "")).strip().lower()
-                if value in {"", "open", "open add", "open add space", "open (add space)", "expanded open"}:
-                    item[key] = "expanded open"
-
-    def ensure_default_floquet(self, plan: dict) -> dict:
-        commands = plan.get("commands")
-        if not isinstance(commands, list):
-            return plan
-        if any(isinstance(item, dict) and item.get("op") == "floquet_port" for item in commands):
-            return plan
-        floquet = {
-            "op": "floquet_port",
-            "modes": self.floquet_modes.get().strip() or "2",
-            "ports": ["Zmin", "Zmax"],
-            "theta": "0",
-            "phi": "0",
-        }
-        insert_at = 0
-        for index, item in enumerate(commands):
-            if isinstance(item, dict) and item.get("op") == "boundary":
-                insert_at = index + 1
-        commands.insert(insert_at, floquet)
-        return plan
-
-    def ensure_default_background(self, plan: dict) -> dict:
-        commands = plan.get("commands")
-        if not isinstance(commands, list):
-            return plan
-        if any(isinstance(item, dict) and item.get("op") == "background" for item in commands):
-            return plan
-        background = {"op": "background", "type": "Normal", "epsilon": "1", "mue": "1"}
-        insert_at = 0
-        for index, item in enumerate(commands):
-            if isinstance(item, dict) and item.get("op") in {"units", "solver_type"}:
-                insert_at = index + 1
-        commands.insert(insert_at, background)
-        return plan
-
-    def ensure_default_solver_type(self, plan: dict) -> dict:
-        commands = plan.get("commands")
-        if not isinstance(commands, list):
-            return plan
-        if any(isinstance(item, dict) and item.get("op") == "solver_type" for item in commands):
-            return plan
-        solver_type = {"op": "solver_type", "type": self.solver_type.get().strip() or "HF Time Domain"}
-        insert_at = 0
-        for index, item in enumerate(commands):
-            if isinstance(item, dict) and item.get("op") == "units":
-                insert_at = index + 1
-        commands.insert(insert_at, solver_type)
-        return plan
-
     def update_param_summary(self) -> None:
         values = self.wizard_values()
         boundary = "x/y unit cell" if self.include_boundary.get() else "경계조건 없음"
@@ -984,46 +903,23 @@ class CSTVibeGUI:
         return APP_DIR / "runs" / f"{timestamp}_{self.safe_slug(prefix)}"
 
     def prepare_solver_plan(self, base_plan: dict, export_path: Path | None, include_solver: bool = True) -> dict:
-        plan = copy.deepcopy(base_plan)
-        plan = self.normalize_simulation_setup(plan)
-        commands = plan.get("commands")
-        if not isinstance(commands, list):
-            raise ValueError("commands는 list여야 합니다.")
-        filtered = [
-            item
-            for item in commands
-            if not (isinstance(item, dict) and item.get("op") in {"save", "solver_start", "export_touchstone"})
-        ]
-        if not any(isinstance(item, dict) and item.get("op") == "rebuild" for item in filtered):
-            filtered.append({"op": "rebuild"})
-        if include_solver:
-            solver_kind = self.solver_kind_from_plan(plan)
-            filtered.append({"op": "solver_start", "solver": solver_kind})
-        if export_path is not None:
-            filtered.append({"op": "export_touchstone", "path": str(export_path), "impedance": 50})
-        plan["commands"] = filtered
-        project = plan.setdefault("project", {"mode": "new"})
-        if isinstance(project, dict):
-            project["save_as"] = str(export_path.parents[1] / "cst_project.cst") if export_path is not None else project.get("save_as")
-        return plan
+        return plan_defaults.prepare_solver_plan(
+            base_plan,
+            export_path,
+            include_solver=include_solver,
+            solver_type=self.solver_type.get().strip() or plan_defaults.DEFAULT_SOLVER_TYPE,
+            floquet_modes=self.floquet_modes.get().strip() or plan_defaults.DEFAULT_FLOQUET_MODES,
+        )
 
     def normalize_simulation_setup(self, base_plan: dict) -> dict:
-        plan = copy.deepcopy(base_plan)
-        plan = self.ensure_default_solver_type(plan)
-        plan = self.ensure_default_background(plan)
-        plan = self.ensure_default_boundary(plan)
-        plan = self.ensure_default_floquet(plan)
-        return plan
+        return plan_defaults.normalize_simulation_setup(
+            base_plan,
+            solver_type=self.solver_type.get().strip() or plan_defaults.DEFAULT_SOLVER_TYPE,
+            floquet_modes=self.floquet_modes.get().strip() or plan_defaults.DEFAULT_FLOQUET_MODES,
+        )
 
     def solver_kind_from_plan(self, plan: dict) -> str:
-        commands = plan.get("commands", [])
-        if isinstance(commands, list):
-            for item in commands:
-                if isinstance(item, dict) and item.get("op") == "solver_type":
-                    solver_type = str(item.get("type", "")).lower()
-                    if "time" in solver_type:
-                        return "time"
-        return "frequency"
+        return plan_defaults.solver_kind_from_plan(plan)
 
     def sync_wizard_parameters_if_needed(self) -> bool:
         if self.plan_source.get() != "wizard":
@@ -1134,7 +1030,7 @@ class CSTVibeGUI:
         return not has_error
 
     def debug_plan_before_start(self, plan: dict) -> bool:
-        messages, ok = self.simulation_readiness_report(plan)
+        messages, ok = plan_defaults.simulation_readiness_report(plan)
         self.clear_output()
         self.append_output("=== 시작 전 설정 디버그 ===\n")
         self.append_output("\n".join(messages) + "\n\n")
@@ -1156,146 +1052,6 @@ class CSTVibeGUI:
         self.append_output("[ok] 시작 전 디버그 통과. 이제 CST 시뮬레이션을 시작합니다.\n\n")
         self.notebook.select(0)
         return True
-
-    def simulation_readiness_report(self, plan: dict) -> tuple[list[str], bool]:
-        messages: list[str] = []
-        commands = plan.get("commands", [])
-        params = plan.get("parameters", {})
-        if not isinstance(commands, list):
-            return ["[error] commands가 list가 아닙니다."], False
-        if not isinstance(params, dict):
-            return ["[error] parameters가 object가 아닙니다."], False
-
-        ops = [item.get("op") for item in commands if isinstance(item, dict)]
-        project = plan.get("project", {})
-        project_mode = project.get("mode") if isinstance(project, dict) else "new"
-        active_project = project_mode == "active"
-
-        def first_command(op: str) -> dict | None:
-            for item in commands:
-                if isinstance(item, dict) and item.get("op") == op:
-                    return item
-            return None
-
-        def require_op(op: str, label: str) -> dict | None:
-            item = first_command(op)
-            if item is None:
-                messages.append(f"[error] {label} 명령이 없습니다.")
-            else:
-                messages.append(f"[ok] {label} 명령 있음")
-            return item
-
-        if active_project:
-            messages.append("[info] 현재 열려 있는 CST 프로젝트에 붙는 모드라서 Units/geometry brick 검사는 생략합니다.")
-        else:
-            require_op("units", "Units")
-            require_op("frequency_range", "Frequency range")
-        solver_type = require_op("solver_type", "Solver type")
-        background = require_op("background", "Background")
-        boundary = require_op("boundary", "Boundary")
-        floquet = require_op("floquet_port", "Floquet port")
-        require_op("rebuild", "Rebuild")
-        solver_start = require_op("solver_start", "Solver Start")
-
-        if solver_type is not None:
-            solver_name = str(solver_type.get("type", "")).strip()
-            if solver_name not in {"HF Time Domain", "HF Frequency Domain"}:
-                messages.append(f"[warn] Solver type이 예상값과 다릅니다: {solver_name}")
-            else:
-                messages.append(f"[ok] Solver type = {solver_name}")
-
-        if background is not None:
-            bg_type = str(background.get("type", "")).strip().lower()
-            eps = str(background.get("epsilon", "")).strip()
-            mu = str(background.get("mue", "")).strip()
-            if bg_type != "normal":
-                messages.append(f"[warn] Background type이 Normal이 아닙니다: {background.get('type')}")
-            if eps != "1" or mu != "1":
-                messages.append(f"[warn] Background epsilon/mue 기본값이 아닙니다: epsilon={eps}, mue={mu}")
-            if bg_type == "normal" and eps == "1" and mu == "1":
-                messages.append("[ok] Background = Normal, epsilon=1, mue=1")
-
-        if boundary is not None:
-            expected = {
-                "xmin": "unit cell",
-                "xmax": "unit cell",
-                "ymin": "unit cell",
-                "ymax": "unit cell",
-                "zmin": "expanded open",
-                "zmax": "expanded open",
-            }
-            for key, expected_value in expected.items():
-                actual = str(boundary.get(key, "")).strip().lower()
-                if actual != expected_value:
-                    messages.append(f"[error] Boundary {key}={boundary.get(key)!r}, 기대값={expected_value!r}")
-                else:
-                    messages.append(f"[ok] Boundary {key}={expected_value}")
-
-        if floquet is not None:
-            ports = floquet.get("ports")
-            modes = str(floquet.get("modes", floquet.get("mode_count", ""))).strip()
-            if ports != ["Zmin", "Zmax"]:
-                messages.append(f"[warn] Floquet ports가 기본값과 다릅니다: {ports}")
-            else:
-                messages.append("[ok] Floquet ports = Zmin/Zmax")
-            if modes != "2":
-                messages.append(f"[warn] Floquet mode number가 2가 아닙니다: {modes}")
-            else:
-                messages.append("[ok] Floquet mode number = 2")
-
-        brick_count = ops.count("brick")
-        if not active_project:
-            if brick_count < 4:
-                messages.append(f"[error] 기본 ㅁ자 유닛셀 brick이 부족합니다: {brick_count}개")
-            else:
-                messages.append(f"[ok] brick_count={brick_count}")
-
-        self.append_numeric_readiness_checks(params, messages, active_project)
-
-        if "export_touchstone" in ops:
-            messages.append("[error] 시뮬레이션 시작 플랜에 export_touchstone이 남아 있습니다. 해석 시작 전에는 제거해야 합니다.")
-        else:
-            messages.append("[ok] Touchstone export 없음")
-
-        if solver_start is not None:
-            solver_kind = str(solver_start.get("solver", "")).strip()
-            if solver_kind not in {"time", "frequency", "frequency_direct"}:
-                messages.append(f"[warn] solver_start.solver 값 확인 필요: {solver_kind}")
-            else:
-                messages.append(f"[ok] solver_start.solver={solver_kind}")
-
-        return messages, not any(line.startswith("[error]") for line in messages)
-
-    def append_numeric_readiness_checks(self, params: dict, messages: list[str], active_project: bool) -> None:
-        if active_project:
-            return
-        error_count_before = sum(1 for line in messages if line.startswith("[error]"))
-
-        def as_float(key: str) -> float | None:
-            try:
-                return float(params[key])
-            except Exception:
-                messages.append(f"[error] parameter {key} 숫자값이 없습니다.")
-                return None
-
-        length = as_float("length")
-        width = as_float("width")
-        thickness = as_float("thickness")
-        fmin = as_float("fmin")
-        fmax = as_float("fmax")
-        if length is not None and length <= 0:
-            messages.append("[error] length는 0보다 커야 합니다.")
-        if width is not None and width <= 0:
-            messages.append("[error] width는 0보다 커야 합니다.")
-        if thickness is not None and thickness <= 0:
-            messages.append("[error] thickness는 0보다 커야 합니다.")
-        if length is not None and width is not None and width >= length / 2:
-            messages.append("[error] width는 length/2보다 작아야 합니다.")
-        if fmin is not None and fmax is not None and fmax <= fmin:
-            messages.append("[error] fmax는 fmin보다 커야 합니다.")
-        error_count_after = sum(1 for line in messages if line.startswith("[error]"))
-        if error_count_after == error_count_before:
-            messages.append("[ok] length/width/thickness/fmin/fmax 숫자 검사 통과")
 
     def run_dry_debug(self, plan: dict) -> str:
         text = json.dumps(plan, ensure_ascii=False, indent=2) + "\n"
@@ -1433,10 +1189,7 @@ class CSTVibeGUI:
         threading.Thread(target=worker, daemon=True).start()
 
     def apply_llm_plan(self, plan: dict) -> None:
-        plan = self.ensure_default_solver_type(plan)
-        plan = self.ensure_default_background(plan)
-        plan = self.ensure_default_boundary(plan)
-        plan = self.ensure_default_floquet(plan)
+        plan = self.normalize_simulation_setup(plan)
         self.sync_wizard_from_plan(plan)
         self.set_plan(plan, source="llm")
         self.append_output("[llm] JSON 변환 완료. 누락된 Background/Boundary/Solver/Floquet 기본값도 자동 보정했습니다.\n")

@@ -19,6 +19,8 @@ import sys
 from pathlib import Path
 from typing import Any, Iterable
 
+from cst_plan_defaults import normalize_boundary_value
+
 
 class PlanError(Exception):
     """Raised when the command plan is invalid."""
@@ -689,24 +691,6 @@ def macro_boundary(command: dict[str, Any]) -> tuple[str, str]:
         lines.append(f"    .ApplyInAllDirections {q(value)}")
     lines.append("End With")
     return "set boundary conditions", indented(lines)
-
-
-def normalize_boundary_value(value: Any) -> Any:
-    if not isinstance(value, str):
-        return value
-    normalized = re.sub(r"[\s_()\-]+", " ", value.strip().lower()).strip()
-    open_add_aliases = {
-        "open add",
-        "open add space",
-        "open added space",
-        "open with add space",
-        "open with added space",
-        "open pml add space",
-        "expanded open",
-    }
-    if normalized in open_add_aliases:
-        return "expanded open"
-    return value
 
 
 def macro_background(command: dict[str, Any]) -> tuple[str, str]:
