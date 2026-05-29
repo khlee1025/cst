@@ -652,6 +652,17 @@ class CSTSession:
             print(f"[dry-run] StoreParameter {name} = {value}")
             return
         if self.backend == "cst-python":
+            errors: list[str] = []
+            for target_name, target in (("modeler", self.modeler), ("project", self.mws), ("schematic", self.schematic)):
+                if target is None:
+                    continue
+                for method_name in ("store_parameter", "StoreParameter", "set_parameter", "SetParameter"):
+                    try:
+                        getattr(target, method_name)(str(name), str(value))
+                        print(f"[cst-python] {target_name}.{method_name} {name}={value}")
+                        return
+                    except Exception as exc:
+                        errors.append(f"{target_name}.{method_name} failed: {exc}")
             code = f'StoreParameter({q(name)}, {q(value)})'
             if self.schematic is not None and hasattr(self.schematic, "execute_vba_code"):
                 macro = "Sub Main\n" + code + "\nEnd Sub"
@@ -659,6 +670,7 @@ class CSTSession:
                     self.schematic.execute_vba_code(macro)
                     return
                 except Exception as exc:
+                    errors.append(f"schematic.execute_vba_code failed: {exc}")
                     print(f"[cst-python] schematic.execute_vba_code StoreParameter failed, using history: {exc}")
             self.add_history(f"store parameter {name}", code)
             return
@@ -1230,7 +1242,15 @@ def execute_case_sweep(session: CSTSession, command: dict[str, Any]) -> None:
         session.rebuild()
         data = {"case_index": f"{index:03d}", "case_number": index, "case_slug": slug, **raw_case}
         for nested_index, nested_command in enumerate(nested, start=1):
-            execute_one_command(session, format_case_value(copy.deepcopy(nested_command), data), nested_index)
+            formatted = format_case_value(copy.deepcopy(nested_command), data)
+            try:
+                execute_one_command(session, formatted, nested_index)
+            except Exception as exc:
+                if isinstance(formatted, dict) and formatted.get("optional"):
+                    op = formatted.get("op", "<unknown>")
+                    print(f"[case_sweep warn] optional op={op} failed for case {index}: {exc}", file=sys.stderr)
+                    continue
+                raise
 
 
 def run_plan(plan: dict[str, Any], args: argparse.Namespace) -> None:

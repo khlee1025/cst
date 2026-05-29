@@ -336,13 +336,19 @@ class CSTVibeGUI:
         button_row.grid(row=4, column=0, columnspan=2, sticky="ew", padx=12, pady=8)
         button_row.columnconfigure(0, weight=1)
         button_row.columnconfigure(1, weight=1)
+        button_row.columnconfigure(2, weight=1)
         ttk.Button(button_row, text="미리보기", command=self.refresh_sweep_preview).grid(row=0, column=0, sticky="ew", padx=(0, 4))
         ttk.Button(
             button_row,
-            text="스윕 실행 + 결과 보기",
+            text="스윕 확인",
+            command=lambda: self.start_sweep(dry_run=True, matrix_text=self.sweep_matrix_text.get("1.0", "end-1c")),
+        ).grid(row=0, column=1, sticky="ew", padx=4)
+        ttk.Button(
+            button_row,
+            text="스윕 시작",
             style="Accent.TButton",
             command=lambda: self.start_sweep(dry_run=False, matrix_text=self.sweep_matrix_text.get("1.0", "end-1c")),
-        ).grid(row=0, column=1, sticky="ew", padx=(4, 0))
+        ).grid(row=0, column=2, sticky="ew", padx=(4, 0))
 
         self.sweep_preview_text = ScrolledText(parent, height=8, wrap="word", font=("Malgun Gothic", 9), bg="#f8fafc", bd=0)
         self.sweep_preview_text.grid(row=5, column=0, columnspan=2, sticky="nsew", padx=12, pady=(0, 12))
@@ -356,14 +362,15 @@ class CSTVibeGUI:
             parameter = self.sweep_parameter.get().strip()
             plan = self.current_plan()
             params = plan.get("parameters", {}) if isinstance(plan, dict) else {}
-            values = self.parse_sweep_values()
+            values = [] if parameter == SWEEP_ALL else self.parse_sweep_values()
             matrix_text = self.sweep_matrix_text.get("1.0", "end-1c") if hasattr(self, "sweep_matrix_text") else ""
             cases = self.build_sweep_cases(plan, parameter, values, matrix_text)
             current = params.get(parameter, "여러 변수") if isinstance(params, dict) else "없음"
             lines = [
                 f"현재 {parameter} = {current}",
                 f"실행될 케이스: {len(cases)}개",
-                "각 케이스는 CST 해석 후 sparameters.s2p를 export하고, 마지막에 S11/S21을 한 표로 합칩니다.",
+                "한 CST 프로젝트 안에서 StoreParameter -> Rebuild -> Solver Start를 케이스별로 반복합니다.",
+                "가능하면 각 케이스의 Touchstone을 exports 폴더에 저장하고 마지막에 S11/S21을 한 표로 합칩니다.",
                 "",
             ]
             for case in cases[:30]:
@@ -600,7 +607,7 @@ class CSTVibeGUI:
         try:
             base_plan = self.current_plan()
             parameter = self.sweep_parameter.get().strip()
-            values = self.parse_sweep_values()
+            values = [] if parameter == SWEEP_ALL else self.parse_sweep_values()
             cases = self.build_sweep_cases(base_plan, parameter, values, matrix_text)
             sweep_root = self.make_run_dir(f"sweep_{parameter}")
             commands, cleanup_files = self.build_sweep_commands(base_plan, cases, dry_run=dry_run, sweep_root=sweep_root)
@@ -617,9 +624,10 @@ class CSTVibeGUI:
         self.last_exit_code = None
         self.clear_output()
         self.notebook.select(0)
-        mode = "스윕 드라이런" if dry_run else "스윕 실행 + 결과 보기"
+        mode = "스윕 확인" if dry_run else "스윕 시작"
         self.status.set(f"{mode} 중...")
-        self.append_output(f"[sweep] mode={parameter}, cases={len(cases)}\n")
+        self.append_output(f"[sweep] parameter_mode={parameter}, cases={len(cases)}\n")
+        self.append_output("[sweep] flow=StoreParameter -> Rebuild -> Solver Start -> optional Touchstone export\n")
         if not dry_run:
             self.append_output(f"[sweep] result_root={sweep_root}\n")
         for case in cases[:30]:
@@ -709,7 +717,7 @@ class CSTVibeGUI:
                 "cases": cases,
                 "commands": [
                     {"op": "solver_start", "solver": self.solver_kind_from_plan(plan)},
-                    {"op": "export_touchstone", "path": export_template, "impedance": 50},
+                    {"op": "export_touchstone", "path": export_template, "impedance": 50, "optional": True},
                 ],
             }
         )

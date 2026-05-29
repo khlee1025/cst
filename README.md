@@ -208,19 +208,29 @@ source, freq_ghz, s11_db, s21_db, note
 
 ## 스윕
 
-스윕은 아직 1단계 안정화 뒤에 쓰는 기능입니다.
+스윕은 한 CST 프로젝트 안에서 케이스를 반복합니다.
 
-단일 실행과 다르게 스윕은 CST 내부 파라미터를 사용해야 합니다. 그래서 `--store-parameters`와 `--keep-expressions`가 필요할 수 있고, 이 경우 CST Parameter List와 연결됩니다.
+```text
+StoreParameter
+-> Rebuild
+-> Solver Start
+-> Touchstone export 시도
+```
+
+단일 실행과 다르게 스윕은 CST 내부 파라미터를 사용합니다. GUI의 `스윕 확인`은 CST를 열지 않고 명령 흐름만 확인하고, `스윕 시작`은 실제 CST에서 케이스를 반복합니다.
 
 처음 확인 순서는 다음이 안전합니다.
 
 ```text
 1. 단일 실행 성공
 2. CST solver가 실제로 도는 것 확인
-3. width 하나만 스윕
-4. 여러 변수 조합 스윕
-5. S11/S21 자동 수집
+3. `width` 하나만 `스윕 확인`
+4. `width` 하나만 `스윕 시작`
+5. 여러 변수 조합 스윕
+6. 생성된 `.s2p`가 있으면 S11/S21 자동 수집
 ```
+
+Touchstone export는 케이스마다 시도하지만, export가 실패해도 solver 반복 자체는 계속 진행합니다. 이 경우 CST에서 직접 `.s2p`를 export한 뒤 `결과 불러오기`로 같은 폴더를 선택하면 됩니다.
 
 ## CLI 사용
 
